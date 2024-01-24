@@ -31,7 +31,7 @@ impl HttpVerb {
 
 #[derive(Debug)]
 pub struct StatusLine {
-    protocol: String,
+    pub protocol: String,
     verb: HttpVerb,
     pub route: String
 }
@@ -54,7 +54,7 @@ impl HttpRequest {
         // .map(|result| result.unwrap());
         let mut start_line = String::new();
 
-        let size = match buf_reader.read_line(&mut start_line) {
+        let _ = match buf_reader.read_line(&mut start_line) {
             Ok(line) => line,
             Err(..) => return Err("Failed to read start line".to_string()),
         };
@@ -73,7 +73,6 @@ impl HttpRequest {
                 let _ = buf_reader.read_exact(&mut buf);
                 Ok( Self::Post{status_line, headers, body:buf} )
             }
-            x => Err(format!("Status line error {:?}",x))
         }
     }
 
