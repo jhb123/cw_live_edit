@@ -1,6 +1,6 @@
 use std::{
     io::{prelude::*, BufReader},
-    net::{TcpListener, TcpStream}, num::NonZeroUsize,
+    net::{TcpListener, TcpStream}, num::NonZeroUsize, collections::HashMap,
 };
 use chrono::{DateTime, Utc};
 use cw_grid_server::HttpRequest;
@@ -64,26 +64,32 @@ fn main() {
 
     let mut tera = Tera::new("templates/**/*").unwrap();
 
+    let mut routes: HashMap<String, fn(&HttpRequest) -> String> = HashMap::new();
+
+    routes.insert("/".to_string(), index_handler);
+    routes.insert("/hello".to_string(), hello_handler);
+
+    let api = Api::register_routes(routes);
 
     let listener = TcpListener::bind("127.0.0.1:5051").unwrap();
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        handle_connection(stream, &tera);
+        handle_connection(stream, &tera, &api);
     }
 }
 
-fn handle_connection(mut stream: TcpStream, tera: &Tera) {
+fn handle_connection(mut stream: TcpStream, tera: &Tera, api: &Api) {
 
-    let res = HttpRequest::new(stream);
-
+    let res = HttpRequest::new(&stream);
+    println!("handling connection");
     if res.is_ok(){
         let req = res.unwrap();
-        match req {
-            HttpRequest::GET{..} => println!("{:?}",req),
-            HttpRequest::POST{..} => println!("{:?}",req)
-    
-        }
+        let response = api.handle_request(&req);
+        stream.write_all(response.as_bytes()).unwrap()
+    }
+    else {
+        stream.write_all("Not found".as_bytes()).unwrap()
     }
 }
 
@@ -132,4 +138,41 @@ fn hello_response (tera: &Tera, stream: &mut TcpStream) {
     }
 
 
+}
+
+struct Api {
+    routes: HashMap<String, fn(&HttpRequest) -> String>
+}
+
+impl Api {
+
+    fn handle_request(&self, req: &HttpRequest) -> String{
+        println!("{:?}",req);
+        match req {
+            HttpRequest::Get { status_line, headers: _ } => {
+                let handler = self.routes.get(&status_line.route).unwrap();
+                handler(req)
+            },
+            HttpRequest::Post { status_line, headers, body } => {
+                let handler = self.routes.get(&status_line.route).unwrap();
+                handler(req)
+            },
+        }
+
+    }
+
+    fn register_routes(routes:  HashMap<String, fn(&HttpRequest) -> String>) -> Self {
+        Self{routes}
+    }
+
+}
+
+fn hello_handler(req: &HttpRequest) -> String{
+    println!("hello route");
+    return "Hello".to_string()
+}
+
+fn index_handler(req: &HttpRequest) -> String{
+    println!("index route");
+    return "Index".to_string()
 }
