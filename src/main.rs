@@ -69,7 +69,7 @@ impl<'a> Api<'a>{
 
 fn hello_handler<'a>(_req: &HttpRequest, tera: &'a Tera) -> String{
     println!("hello route");
-    let status_line = "HTTP/1.1 200 Internal Server Error";
+    let status_line = "HTTP/1.1 200 Ok";
     let mut context = tera::Context::new();
     context.insert("data", "Hello");
     let contents = tera.render("hello.html", &context).unwrap();
@@ -80,7 +80,7 @@ fn hello_handler<'a>(_req: &HttpRequest, tera: &'a Tera) -> String{
 
 fn index_handler<'a>(_req: &HttpRequest, tera: &'a Tera) -> String{
     println!("hello route");
-    let status_line = "HTTP/1.1 200 Internal Server Error";
+    let status_line = "HTTP/1.1 200 Ok";
     let mut context = tera::Context::new();
     context.insert("data", "Index");
     let contents = tera.render("hello.html", &context).unwrap();
