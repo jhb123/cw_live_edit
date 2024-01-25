@@ -169,6 +169,7 @@ name = "cw_grid_server"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "lazy_static",
  "tera",
 ]
 
