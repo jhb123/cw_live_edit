@@ -37,7 +37,7 @@ pub struct StatusLine {
 }
 
 impl StatusLine {
-    fn new(status_line: String) -> Self {
+    fn new(status_line: &str) -> Self {
         let parts: Vec<_> = status_line.split(" ").collect();
         let verb = HttpVerb::new(parts[0]).unwrap();
         let protocol = parts[2].trim().to_string();
@@ -59,7 +59,7 @@ impl HttpRequest {
             Err(..) => return Err("Failed to read start line".to_string()),
         };
         
-        let status_line = StatusLine::new(start_line);
+        let status_line = StatusLine::new(&start_line);
     
         match status_line.verb {
             HttpVerb::Get  => {

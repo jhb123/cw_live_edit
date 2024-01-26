@@ -14,9 +14,9 @@ lazy_static! {
 
 fn main() {
 
-    let mut routes: HashMap<String, fn(&HttpRequest) -> String> = HashMap::new();
-    routes.insert("/".to_string(), index_handler);
-    routes.insert("/hello".to_string(), hello_handler);
+    let mut routes: HashMap<&'static str, fn(&HttpRequest) -> String> = HashMap::new();
+    routes.insert("/", index_handler);
+    routes.insert("/hello", hello_handler);
     
     
     let api: Api = Api::register_routes(routes);
@@ -52,7 +52,7 @@ fn handle_connection(mut stream: TcpStream, api: Arc<Api>) {
 
 #[derive(Clone)]
 struct Api {
-    routes: HashMap<String, fn(&HttpRequest) -> String>,
+    routes: HashMap<&'static str, fn(&HttpRequest) -> String>,
 }
 
 impl Api{
@@ -61,18 +61,18 @@ impl Api{
         println!("{:?}",req);
         match req {
             HttpRequest::Get { status_line, headers: _ } => {
-                let handler = self.routes.get(&status_line.route).unwrap();
+                let handler = self.routes.get(&status_line.route as &str).unwrap();
                 handler(req)
             },
             HttpRequest::Post { status_line, headers: _, body: _ } => {
-                let handler = self.routes.get(&status_line.route).unwrap();
+                let handler = self.routes.get(&status_line.route as &str).unwrap();
                 handler(req)
             },
         }
 
     }
 
-    fn register_routes(routes:  HashMap<String, fn(&HttpRequest) -> String>) -> Self {
+    fn register_routes(routes:  HashMap<&'static str, fn(&HttpRequest) -> String>) -> Self {
         Self{routes}
     }
 
