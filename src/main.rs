@@ -5,21 +5,16 @@ use std::{
 use cw_grid_server::{HttpRequest, ThreadPool};
 use tera::Tera;
 
-use lazy_static::lazy_static;
-
-
-lazy_static! {
-    static ref TERA: Tera = Tera::new("templates/**/*").unwrap();
-}
-
 fn main() {
 
-    let mut routes: HashMap<&'static str, fn(&HttpRequest) -> String> = HashMap::new();
+    let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String> = HashMap::new();
     routes.insert("/", index_handler);
     routes.insert("/hello", hello_handler);
     
+    let tera = Tera::new("templates/**/*").unwrap();
+    let tera_arc = Arc::new(tera);
     
-    let api: Api = Api::register_routes(routes);
+    let api: Api = Api::register_routes(routes, tera_arc);
     let api_arc = Arc::new(api);
 
     let pool = ThreadPool::new(4);
@@ -29,7 +24,7 @@ fn main() {
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         let api_arc_clone = Arc::clone(&api_arc);
-
+        // let tera_arc_clone = Arc::clone(&tera_arc);
         pool.execute(|| {
             handle_connection(stream, api_arc_clone);
         });
@@ -54,7 +49,8 @@ fn handle_connection(mut stream: TcpStream, api: Arc<Api>) {
 
 #[derive(Clone)]
 struct Api {
-    routes: HashMap<&'static str, fn(&HttpRequest) -> String>,
+    routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String>,
+    tera:  Arc<Tera>
 }
 
 impl Api{
@@ -64,40 +60,40 @@ impl Api{
         match req {
             HttpRequest::Get { status_line, headers: _ } => {
                 let handler = self.routes.get(&status_line.route as &str).unwrap();
-                handler(req)
+                handler(req, Arc::clone(&self.tera))
             },
             HttpRequest::Post { status_line, headers: _, body: _ } => {
                 let handler = self.routes.get(&status_line.route as &str).unwrap();
-                handler(req)
+                handler(req, Arc::clone(&self.tera))
             },
         }
 
     }
 
-    fn register_routes(routes:  HashMap<&'static str, fn(&HttpRequest) -> String>) -> Self {
-        Self{routes}
+    fn register_routes(routes:  HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String>, tera:  Arc<Tera> ) -> Self {
+        Self{routes, tera}
     }
 
 }
 
-fn hello_handler(_req: &HttpRequest) -> String{
+fn hello_handler(_req: &HttpRequest, tera:  Arc<Tera>) -> String{
     println!("hello route");
     thread::sleep(Duration::from_secs(5));
     let status_line = "HTTP/1.1 200 Ok";
     let mut context = tera::Context::new();
     context.insert("data", "Hello");
-    let contents = TERA.render("hello.html", &context).unwrap();
+    let contents = tera.render("hello.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
     return response
 }
 
-fn index_handler(_req: &HttpRequest) -> String{
+fn index_handler(_req: &HttpRequest, tera: Arc<Tera>) -> String{
     println!("hello route");
     let status_line = "HTTP/1.1 200 Ok";
     let mut context = tera::Context::new();
     context.insert("data", "Index");
-    let contents = TERA.render("hello.html", &context).unwrap();
+    let contents = tera.render("hello.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
     return response
