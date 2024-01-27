@@ -2,7 +2,7 @@ use std::{
     io::prelude::*,
     net::{TcpListener, TcpStream}, collections::HashMap, thread, time::Duration, sync::Arc,
 };
-use cw_grid_server::HttpRequest;
+use cw_grid_server::{HttpRequest, ThreadPool};
 use tera::Tera;
 
 use lazy_static::lazy_static;
@@ -22,13 +22,15 @@ fn main() {
     let api: Api = Api::register_routes(routes);
     let api_arc = Arc::new(api);
 
+    let pool = ThreadPool::new(4);
+
     let listener = TcpListener::bind("127.0.0.1:5051").unwrap();
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         let api_arc_clone = Arc::clone(&api_arc);
 
-        thread::spawn(|| {
+        pool.execute(|| {
             handle_connection(stream, api_arc_clone);
         });
         
