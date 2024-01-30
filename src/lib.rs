@@ -1,8 +1,8 @@
 use std::{
-    collections::HashMap,
-    net::TcpStream, 
-    io::{prelude::*, BufReader}, thread::{Thread, JoinHandle, self}, sync::{mpsc, Mutex, Arc},
+    collections::HashMap, fmt::{self, write}, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
 };
+
+use log::info;
 
 #[derive(Debug)]
 pub enum HttpRequest {
@@ -28,6 +28,17 @@ impl HttpVerb {
     }
 }
 
+impl fmt::Display for HttpVerb {
+
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HttpVerb::Get => write!(f,"GET"),
+            HttpVerb::Post => write!(f,"POST"),
+        }
+    }
+
+}
+
 
 #[derive(Debug)]
 pub struct StatusLine {
@@ -44,6 +55,13 @@ impl StatusLine {
         let route = parts[1].to_string();
         StatusLine{ protocol, verb, route }
 
+    }
+}
+
+impl fmt::Display for StatusLine {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {} {}", self.verb, self.route, self.protocol)
     }
 }
 
@@ -94,6 +112,39 @@ impl HttpRequest {
     }
 }
 
+impl fmt::Display for HttpRequest {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+        fn format_headers(headers: &HashMap<String,String>) -> String {
+            let header_summary = headers
+            .into_iter()
+            .map(|(key,val)| format!("{:15}: {}", key, val))
+            .collect::<Vec<String>>()
+            .join("\n");
+            return header_summary;
+        }
+
+
+        match self {
+            HttpRequest::Get { status_line, headers } => {
+
+                let header_summary = format_headers(headers);
+
+                write!(f, "Request:\n{status_line}\n{header_summary}")
+
+            },
+            HttpRequest::Post { status_line, headers, body: _ } => {
+
+                let header_summary = format_headers(headers);
+
+                write!(f, "Request:\n{status_line}\n{header_summary}")
+            },
+        }
+        
+    }
+}
+
 
 pub struct ThreadPool{
     workers: Vec<Worker>,
@@ -113,10 +164,11 @@ impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>)-> Worker{
         let thread = thread::spawn( move || loop {
             let job = receiver.lock().unwrap().recv().unwrap();
-            println!("Received Job, executing");
+            info!("Worker {} received Job, executing", id);
             job();
         });
 
+        info!("Creating worker: {}",id);
         Worker { id, thread }
     }
 }

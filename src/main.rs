@@ -4,8 +4,10 @@ use std::{
 };
 use cw_grid_server::{HttpRequest, ThreadPool};
 use tera::Tera;
+use log::info;
 
 fn main() {
+    env_logger::init();
 
     let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String> = HashMap::new();
     routes.insert("/", index_handler);
@@ -19,8 +21,10 @@ fn main() {
 
     let pool = ThreadPool::new(4);
 
-    let listener = TcpListener::bind("127.0.0.1:5051").unwrap();
+    let addr = "127.0.0.1:5051";
 
+    let listener = TcpListener::bind(addr).unwrap();
+    info!("Started on: http://{addr}");
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         let api_arc_clone = Arc::clone(&api_arc);
@@ -34,9 +38,8 @@ fn main() {
 }
 
 fn handle_connection(mut stream: TcpStream, api: Arc<Api>) {
-
+    info!("handling connection");
     let res = HttpRequest::new(&stream);
-    println!("handling connection");
     if res.is_ok(){
         let req = res.unwrap();
         let response = api.handle_request(&req);
@@ -56,7 +59,7 @@ struct Api {
 impl Api{
 
     fn handle_request(&self, req: &HttpRequest) -> String{
-        println!("{:?}",req);
+        info!("{req}");
         match req {
             HttpRequest::Get { status_line, headers: _ } => {
                 let handler = self.routes.get(&status_line.route as &str).unwrap();
@@ -77,9 +80,9 @@ impl Api{
 }
 
 fn hello_handler(_req: &HttpRequest, tera:  Arc<Tera>) -> String{
-    println!("hello route");
     thread::sleep(Duration::from_secs(5));
     let status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}",status_line);
     let mut context = tera::Context::new();
     context.insert("data", "Hello");
     let contents = tera.render("hello.html", &context).unwrap();
@@ -89,8 +92,8 @@ fn hello_handler(_req: &HttpRequest, tera:  Arc<Tera>) -> String{
 }
 
 fn index_handler(_req: &HttpRequest, tera: Arc<Tera>) -> String{
-    println!("hello route");
     let status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}",status_line);
     let mut context = tera::Context::new();
     context.insert("data", "Index");
     let contents = tera.render("hello.html", &context).unwrap();
