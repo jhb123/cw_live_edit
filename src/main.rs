@@ -1,8 +1,9 @@
 use std::{
-    io::prelude::*,
-    net::{TcpListener, TcpStream}, collections::HashMap, thread, time::Duration, sync::Arc,
+    collections::{hash_set, HashMap}, fs::File, io::prelude::*, net::{TcpListener, TcpStream}, sync::Arc, thread, time::Duration
 };
-use cw_grid_server::{HttpRequest, ThreadPool};
+use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+use crypto::{digest::Digest, sha1::Sha1};
+use cw_grid_server::{web_socket_accept, HttpRequest, ThreadPool};
 use tera::Tera;
 use log::info;
 
@@ -12,6 +13,8 @@ fn main() {
     let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String> = HashMap::new();
     routes.insert("/", index_handler);
     routes.insert("/hello", hello_handler);
+    routes.insert("/crossword.js", crossword_js);
+    routes.insert("/echo", echo);
     
     let tera = Tera::new("templates/**/*").unwrap();
     let tera_arc = Arc::new(tera);
@@ -62,12 +65,17 @@ impl Api{
         info!("{req}");
         match req {
             HttpRequest::Get { status_line, headers: _ } => {
-                let handler = self.routes.get(&status_line.route as &str).unwrap();
-                handler(req, Arc::clone(&self.tera))
+                match self.routes.get(&status_line.route as &str) {
+                    Some(handler) => handler(req, Arc::clone(&self.tera)),
+                    None => missing( Arc::clone(&self.tera)),
+                }
+                
             },
             HttpRequest::Post { status_line, headers: _, body: _ } => {
-                let handler = self.routes.get(&status_line.route as &str).unwrap();
-                handler(req, Arc::clone(&self.tera))
+                match self.routes.get(&status_line.route as &str){
+                    Some(handler) => handler(req, Arc::clone(&self.tera)),
+                    None => missing( Arc::clone(&self.tera)),
+                }
             },
         }
 
@@ -101,3 +109,45 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>) -> String{
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
     return response
 }
+
+fn missing(tera: Arc<Tera>) -> String{
+    let status_line = "HTTP/1.1 404 Ok";
+    info!("Response Status {}",status_line);
+    let mut context = tera::Context::new();
+    context.insert("status", "404");
+    let contents = tera.render("error.html", &context).unwrap();
+    let length = contents.len();
+    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+    return response
+}
+
+fn crossword_js(_req: &HttpRequest, tera: Arc<Tera>) -> String {
+    let status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}",status_line);
+    let mut file = File::open("static/crossword.js").unwrap();
+    let mut contents = String::new();
+    let length = file.read_to_string(&mut contents).unwrap();
+    format!("{status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}")
+}
+
+fn echo(req: &HttpRequest, tera: Arc<Tera>) -> String {
+    
+    let headers = match req {
+        HttpRequest::Get { status_line, headers } => headers,
+        HttpRequest::Post { status_line, headers, body } => return missing(tera),
+    };
+    
+    let status_line = "HTTP/1.1 101 Switching Protocols";
+    info!("Response Status {}",status_line);
+    
+    let contents = "Upgrade: websocket\r\nConnection: Upgrade".to_string();
+    let sender_key = headers.get("Sec-WebSocket-Key").unwrap();
+    let encoded_data = web_socket_accept(sender_key);
+
+    let length = encoded_data.len();
+    let handshake = format!("{status_line}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {encoded_data}\r\n\r\n");
+    log::info!("Handshake:\n{}", handshake);
+    handshake
+}
+
+

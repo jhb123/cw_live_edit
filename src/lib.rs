@@ -1,8 +1,9 @@
 use std::{
-    collections::HashMap, fmt::{self, write}, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
+    collections::HashMap, fmt::{self, write}, hash::Hash, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
 };
-
-use log::info;
+use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+use crypto::{digest::Digest, sha1::Sha1};
+use log::{info, warn};
 
 #[derive(Debug)]
 pub enum HttpRequest {
@@ -19,11 +20,11 @@ pub enum HttpVerb {
 }
 
 impl HttpVerb {
-    fn new(s: &str) -> Result<Self, &str> {
+    fn new(s: &str) -> Result<Self, String> {
         match s {
             "GET" => Ok(HttpVerb::Get),
             "POST" => Ok(HttpVerb::Post),
-            _  => Err("Unknown Method")
+            s=> Err(format!("Unknown Method: {s}"))
         }
     }
 }
@@ -48,12 +49,19 @@ pub struct StatusLine {
 }
 
 impl StatusLine {
-    fn new(status_line: &str) -> Self {
+    fn new(status_line: &str) -> Result<Self, &str> {
         let parts: Vec<_> = status_line.split(" ").collect();
-        let verb = HttpVerb::new(parts[0]).unwrap();
+
+        let verb = match HttpVerb::new(parts[0]){
+            Ok(val) => val,
+            Err(err) => {
+                warn!("status line:{}. Cannot process this request", status_line);
+                return Err(status_line)
+            },
+        };
         let protocol = parts[2].trim().to_string();
         let route = parts[1].to_string();
-        StatusLine{ protocol, verb, route }
+        Ok(StatusLine{ protocol, verb, route })
 
     }
 }
@@ -77,7 +85,7 @@ impl HttpRequest {
             Err(..) => return Err("Failed to read start line".to_string()),
         };
         
-        let status_line = StatusLine::new(&start_line);
+        let status_line = StatusLine::new(&start_line)?;
     
         match status_line.verb {
             HttpVerb::Get  => {
@@ -203,5 +211,68 @@ impl ThreadPool {
     //     T: Send +'static {
 
     // }
+
+}
+
+enum Content {
+    application_octet_stream {content: Vec::<u8>},
+    text_plain {content: String},
+    text_css {content: String},
+    text_html {content: String},
+    text_javascript {content: String}
+}
+
+pub struct Response {
+    status_line: String,
+    headers: HashMap<String,String>,
+    content: Content
+}
+
+pub trait Writable {
+    fn write(&self) -> Vec::<u8>;
+}
+
+impl Response  {
+
+    fn new<T>(content: T, extra_headers: Option<HashMap<String,String>>) -> Self where T: ExactSizeIterator{
+        let status_line = "HTTP/1.1 200 Ok";
+
+        let length = content.len();
+        let headers: HashMap<String, String> = HashMap::from([("Content-Length".to_string(), format!("{length}"))]);
+
+        let c = Content::text_css { content: "123".to_owned() };
+        Response {status_line: status_line.to_string(), headers, content: c }
+    }
+
+}
+
+pub fn web_socket_accept(sender_key: &str) -> String {
+    let magic_str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    let full_str = sender_key.to_owned()+magic_str;
+    let mut hasher = Sha1::new();
+
+    hasher.input_str(&full_str);
+
+    // read hash digest
+    // let hex = hasher.result_str();
+    let bytes_num = hasher.output_bytes();
+    let hash_debug = hasher.result_str();
+    // log::info!("{:?}",hash_debug);
+
+    // log::info!("Bytes: {}", bytes_num);
+
+    let mut buf = vec![0;bytes_num];
+    hasher.result(&mut buf);
+    general_purpose::STANDARD.encode(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+
+    fn web_socket_accept_header() {
+        let actual = crate::web_socket_accept("dGhlIHNhbXBsZSBub25jZQ==");
+        assert_eq!(actual, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+    }
 
 }
