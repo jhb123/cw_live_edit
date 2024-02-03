@@ -1,7 +1,7 @@
 use std::{
-    collections::HashMap, fmt::{self, write}, hash::Hash, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
+    collections::HashMap, fmt, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
 };
-use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+use base64::{Engine as _, engine::general_purpose};
 use crypto::{digest::Digest, sha1::Sha1};
 use log::{info, warn};
 
@@ -54,7 +54,7 @@ impl StatusLine {
 
         let verb = match HttpVerb::new(parts[0]){
             Ok(val) => val,
-            Err(err) => {
+            Err(_err) => {
                 warn!("status line:{}. Cannot process this request", status_line);
                 return Err(status_line)
             },
@@ -153,12 +153,13 @@ impl fmt::Display for HttpRequest {
     }
 }
 
-
+#[allow(dead_code)]
 pub struct ThreadPool{
     workers: Vec<Worker>,
     sender: mpsc::Sender<Job>,
 }
 
+#[allow(dead_code)]
 struct Worker {
     id: usize,
     thread: thread::JoinHandle<()>
@@ -214,14 +215,16 @@ impl ThreadPool {
 
 }
 
+#[allow(dead_code)]
 enum Content {
-    application_octet_stream {content: Vec::<u8>},
-    text_plain {content: String},
-    text_css {content: String},
-    text_html {content: String},
-    text_javascript {content: String}
+    ApplicationOctetStream {content: Vec::<u8>},
+    TextPlain {content: String},
+    TextCss {content: String},
+    TextHtml {content: String},
+    TextJavascript {content: String}
 }
 
+#[allow(dead_code)]
 pub struct Response {
     status_line: String,
     headers: HashMap<String,String>,
@@ -234,13 +237,14 @@ pub trait Writable {
 
 impl Response  {
 
-    fn new<T>(content: T, extra_headers: Option<HashMap<String,String>>) -> Self where T: ExactSizeIterator{
+    #[allow(dead_code)]
+    fn new<T>(content: T, _extra_headers: Option<HashMap<String,String>>) -> Self where T: ExactSizeIterator{
         let status_line = "HTTP/1.1 200 Ok";
 
         let length = content.len();
         let headers: HashMap<String, String> = HashMap::from([("Content-Length".to_string(), format!("{length}"))]);
 
-        let c = Content::text_css { content: "123".to_owned() };
+        let c = Content::TextCss { content: "123".to_owned() };
         Response {status_line: status_line.to_string(), headers, content: c }
     }
 
@@ -253,17 +257,100 @@ pub fn web_socket_accept(sender_key: &str) -> String {
 
     hasher.input_str(&full_str);
 
-    // read hash digest
-    // let hex = hasher.result_str();
     let bytes_num = hasher.output_bytes();
-    let hash_debug = hasher.result_str();
-    // log::info!("{:?}",hash_debug);
-
-    // log::info!("Bytes: {}", bytes_num);
 
     let mut buf = vec![0;bytes_num];
     hasher.result(&mut buf);
     general_purpose::STANDARD.encode(buf)
+}
+
+pub fn websocket_message(msg: &str) -> Vec<u8>{
+    let mut payload: Vec<u8> = Vec::new();
+
+    // FIN bit: 1 (final fragment)
+    payload.push(0b1000_0001); // FIN bit: 1, Opcode: 1 (text frame)
+
+    // Payload length: 13 (length of "Hello, WebSocket!")
+    let len = msg.len() as u8;
+    payload.push(len);
+
+    // Payload data: "Hello, WebSocket!"
+    payload.extend_from_slice(msg.as_bytes());
+
+    for byte in &payload {
+        print!("{:02X} ", *byte);
+    }
+    // info!("{}",bits_string);
+    payload
+}
+
+
+pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> Vec<u8> {
+
+    // see  RFC 6455: https://www.rfc-editor.org/rfc/rfc6455.html#section-5.3
+    let mut frame_header = vec![0; 2];   
+    buf_reader.read_exact(&mut frame_header).unwrap();
+    let mut payload_len = (frame_header[1] & 0b0111_1111) as u64;
+    let mut masking_key = vec![0;4];
+
+    info!("7 bit payload len: {}", payload_len);
+    match payload_len {
+        0..=125 => {
+            frame_header = vec![0; 4];
+            buf_reader.read_exact(&mut frame_header).unwrap();
+            masking_key = frame_header.try_into().unwrap();
+        }
+        126 => {
+            frame_header = vec![0; 6];
+            buf_reader.read_exact(&mut frame_header).unwrap();
+            payload_len = websocket_content_len(&frame_header[0..2]).unwrap();
+            masking_key = frame_header[2..].try_into().unwrap();
+
+        }
+        127 => {
+            frame_header = vec![0; 12];
+            buf_reader.read_exact(&mut frame_header).unwrap();
+            payload_len = websocket_content_len(&frame_header[0..8]).unwrap();
+            masking_key = frame_header[8..].try_into().unwrap();
+        }
+        128..=u64::MAX => {
+            // impossible? 
+        }
+    }
+
+    info!("full payload len: {}", payload_len);
+    info!("masking key: {:02X?}", masking_key);
+
+    let mut rec_msg = vec![0; payload_len as usize];
+    buf_reader.read_exact(&mut rec_msg).unwrap();
+
+    
+    let decoded: Vec<u8> = rec_msg
+        .iter()
+        .enumerate()
+        .map(|(index, el)| el^masking_key[index%4] )
+        .collect();
+    
+    
+    return decoded;
+
+}
+
+fn websocket_content_len(data: &[u8]) -> Result<u64, &str>{
+    let num_shifts = data.len();
+    match num_shifts {
+        0..=8 => {
+            Ok(data.iter()
+                .rev()
+                .enumerate()
+                .map(|(idx, el)| (*el as u64) << 8*(idx))
+                .fold(0,|acc, x| acc | x )
+        )
+        },
+        _ => Err("array too long.")
+    }
+    // if num_shifts
+    // 
 }
 
 #[cfg(test)]
@@ -274,5 +361,7 @@ mod tests {
         let actual = crate::web_socket_accept("dGhlIHNhbXBsZSBub25jZQ==");
         assert_eq!(actual, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
     }
+
+    
 
 }

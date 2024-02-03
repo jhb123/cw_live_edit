@@ -1,16 +1,14 @@
 use std::{
-    collections::{hash_set, HashMap}, fs::File, io::prelude::*, net::{TcpListener, TcpStream}, sync::Arc, thread, time::Duration
+    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::Arc, thread, time::Duration
 };
-use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
-use crypto::{digest::Digest, sha1::Sha1};
-use cw_grid_server::{web_socket_accept, HttpRequest, ThreadPool};
+use cw_grid_server::{decode_client_frame, web_socket_accept, websocket_message, HttpRequest, ThreadPool};
 use tera::Tera;
 use log::info;
 
 fn main() {
     env_logger::init();
 
-    let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String> = HashMap::new();
+    let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)> = HashMap::new();
     routes.insert("/", index_handler);
     routes.insert("/hello", hello_handler);
     routes.insert("/crossword.js", crossword_js);
@@ -45,8 +43,7 @@ fn handle_connection(mut stream: TcpStream, api: Arc<Api>) {
     let res = HttpRequest::new(&stream);
     if res.is_ok(){
         let req = res.unwrap();
-        let response = api.handle_request(&req);
-        stream.write_all(response.as_bytes()).unwrap()
+        api.handle_request(&req, stream);
     }
     else {
         stream.write_all("Not found".as_bytes()).unwrap()
@@ -55,39 +52,39 @@ fn handle_connection(mut stream: TcpStream, api: Arc<Api>) {
 
 #[derive(Clone)]
 struct Api {
-    routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String>,
+    routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)>,
     tera:  Arc<Tera>
 }
 
 impl Api{
 
-    fn handle_request(&self, req: &HttpRequest) -> String{
+    fn handle_request(&self, req: &HttpRequest, stream: TcpStream){
         info!("{req}");
         match req {
             HttpRequest::Get { status_line, headers: _ } => {
                 match self.routes.get(&status_line.route as &str) {
-                    Some(handler) => handler(req, Arc::clone(&self.tera)),
-                    None => missing( Arc::clone(&self.tera)),
+                    Some(handler) => handler(req, Arc::clone(&self.tera), stream),
+                    None => missing( Arc::clone(&self.tera), stream),
                 }
                 
             },
             HttpRequest::Post { status_line, headers: _, body: _ } => {
                 match self.routes.get(&status_line.route as &str){
-                    Some(handler) => handler(req, Arc::clone(&self.tera)),
-                    None => missing( Arc::clone(&self.tera)),
+                    Some(handler) => handler(req, Arc::clone(&self.tera), stream),
+                    None => missing( Arc::clone(&self.tera),stream),
                 }
             },
         }
 
     }
 
-    fn register_routes(routes:  HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>) -> String>, tera:  Arc<Tera> ) -> Self {
+    fn register_routes(routes:  HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)>, tera:  Arc<Tera>) -> Self {
         Self{routes, tera}
     }
 
 }
 
-fn hello_handler(_req: &HttpRequest, tera:  Arc<Tera>) -> String{
+fn hello_handler(_req: &HttpRequest, tera:  Arc<Tera>, mut stream: TcpStream){
     thread::sleep(Duration::from_secs(5));
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}",status_line);
@@ -96,10 +93,10 @@ fn hello_handler(_req: &HttpRequest, tera:  Arc<Tera>) -> String{
     let contents = tera.render("hello.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    return response
+    stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn index_handler(_req: &HttpRequest, tera: Arc<Tera>) -> String{
+fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream){
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}",status_line);
     let mut context = tera::Context::new();
@@ -107,10 +104,10 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>) -> String{
     let contents = tera.render("hello.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    return response
+    stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn missing(tera: Arc<Tera>) -> String{
+fn missing(tera: Arc<Tera>, mut stream: TcpStream){
     let status_line = "HTTP/1.1 404 Ok";
     info!("Response Status {}",status_line);
     let mut context = tera::Context::new();
@@ -118,36 +115,47 @@ fn missing(tera: Arc<Tera>) -> String{
     let contents = tera.render("error.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    return response
+    stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn crossword_js(_req: &HttpRequest, tera: Arc<Tera>) -> String {
+fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}",status_line);
     let mut file = File::open("static/crossword.js").unwrap();
     let mut contents = String::new();
     let length = file.read_to_string(&mut contents).unwrap();
-    format!("{status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}")
+    let response = format!("{status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
+    stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn echo(req: &HttpRequest, tera: Arc<Tera>) -> String {
+fn echo(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     
     let headers = match req {
-        HttpRequest::Get { status_line, headers } => headers,
-        HttpRequest::Post { status_line, headers, body } => return missing(tera),
+        HttpRequest::Get { status_line: _, headers } => headers,
+        HttpRequest::Post { status_line: _, headers: _, body: _ } => return missing(tera,stream),
     };
     
     let status_line = "HTTP/1.1 101 Switching Protocols";
     info!("Response Status {}",status_line);
     
-    let contents = "Upgrade: websocket\r\nConnection: Upgrade".to_string();
     let sender_key = headers.get("Sec-WebSocket-Key").unwrap();
     let encoded_data = web_socket_accept(sender_key);
 
-    let length = encoded_data.len();
     let handshake = format!("{status_line}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {encoded_data}\r\n\r\n");
     log::info!("Handshake:\n{}", handshake);
-    handshake
-}
 
+    stream.write_all(handshake.as_bytes()).unwrap();
+    let frame = websocket_message("Hello from rust!");
+    stream.write_all(&frame).unwrap();
+
+
+    let mut buf_reader = BufReader::new(&mut stream);
+    
+    let msg = decode_client_frame(&mut buf_reader);
+    unsafe {
+        // who cares, this is just debugging
+        info!("{}", String::from_utf8_unchecked(msg));
+    }
+
+}
 
