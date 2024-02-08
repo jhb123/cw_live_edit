@@ -231,6 +231,7 @@ dependencies = [
  "base64",
  "chrono",
  "env_logger",
+ "lazy_static",
  "log",
  "rust-crypto",
  "tera",

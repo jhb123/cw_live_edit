@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, fmt, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
+    collections::HashMap, fmt, io::{self, prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
 };
 use base64::{Engine as _, engine::general_purpose};
 use crypto::{digest::Digest, sha1::Sha1};
@@ -285,11 +285,11 @@ pub fn websocket_message(msg: &str) -> Vec<u8>{
 }
 
 
-pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> Vec<u8> {
+pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::Result<Vec<u8>> {
 
     // see  RFC 6455: https://www.rfc-editor.org/rfc/rfc6455.html#section-5.3
     let mut frame_header = vec![0; 2];   
-    buf_reader.read_exact(&mut frame_header).unwrap();
+    buf_reader.read_exact(&mut frame_header)?;
     let mut payload_len = (frame_header[1] & 0b0111_1111) as u64;
     let mut masking_key = vec![0;4];
 
@@ -332,7 +332,7 @@ pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> Vec<u
         .collect();
     
     
-    return decoded;
+    return Ok(decoded);
 
 }
 

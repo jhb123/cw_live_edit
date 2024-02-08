@@ -1,12 +1,21 @@
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::Arc, thread, time::Duration
+    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{mpsc::{self, Sender}, Arc, Mutex}, thread::{self, sleep, JoinHandle}, time::{self, Duration}
 };
 use cw_grid_server::{decode_client_frame, web_socket_accept, websocket_message, HttpRequest, ThreadPool};
 use tera::Tera;
 use log::info;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref PUZZLE: Mutex<PuzzleChannels> = Mutex::new(PuzzleChannels::new());
+}
+
+
 
 fn main() {
     env_logger::init();
+
+    info!("{:?}",*PUZZLE);
 
     let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)> = HashMap::new();
     routes.insert("/", index_handler);
@@ -147,15 +156,104 @@ fn echo(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     stream.write_all(handshake.as_bytes()).unwrap();
     let frame = websocket_message("Hello from rust!");
     stream.write_all(&frame).unwrap();
+    stream.set_read_timeout(Some(Duration::from_millis(10)));
 
+    let thread_safe_stream = Arc::new(Mutex::new(stream));
 
-    let mut buf_reader = BufReader::new(&mut stream);
-    
-    let msg = decode_client_frame(&mut buf_reader);
-    unsafe {
-        // who cares, this is just debugging
-        info!("{}", String::from_utf8_unchecked(msg));
+    let thread_safe_stream_2 = thread_safe_stream.clone();
+
+    let (sender, receiver) = mpsc::channel::<Vec<u8>>();
+
+    PUZZLE.lock().unwrap().add_new_client(sender);
+
+    thread::spawn(move || {
+        loop{
+            let msg = receiver.recv().unwrap();
+            unsafe {
+                // who cares, this is just debugging        
+                let frame = websocket_message(&String::from_utf8_unchecked(msg));
+                thread_safe_stream_2.lock().unwrap().write_all(&frame).unwrap();
+            }
+        }
+    });
+
+    thread::spawn(move || {
+        let sender = PUZZLE.lock().unwrap().sender.clone();
+        loop{
+            {
+                let mut st = thread_safe_stream.lock().unwrap();
+                let mut buf_reader = BufReader::new(&mut *st);
+                let _ = match decode_client_frame(&mut buf_reader) {
+                    Ok(msg) => sender.send(msg),
+                    Err(err) => {
+                        Ok(())
+                    },
+                };                
+            }
+            sleep(Duration::from_millis(10))
+        }
+    });
+
+    // let mut buf_reader = BufReader::new(&mut stream);
+    // let msg = decode_client_frame(&mut buf_reader).unwrap();
+    // let sender = PUZZLE.sender.clone();
+    // sender.send(msg);
+    // let msg = decode_client_frame(&mut buf_reader).unwrap();
+    // sender.send(msg);
+    // let msg = decode_client_frame(&mut buf_reader).unwrap();
+    // sender.send(msg);
+
+}
+
+#[derive(Debug)]
+struct PuzzleChannels{
+    sender: Arc<mpsc::Sender<Vec<u8>>>,
+    clients: Arc<Mutex<Vec<mpsc::Sender<Vec<u8>>>>>,
+    running: bool,
+    join_handle : Option<JoinHandle<()>>
+}
+
+impl PuzzleChannels {
+
+    fn new() -> Self {
+        
+        let (sender, receiver) = mpsc::channel::<Vec<u8>>();
+
+        let running = true;
+        let clients = Arc::new(Mutex::new(vec![]));
+        let clients_clone = clients.clone();
+
+        let join_handle = thread::spawn(move || {
+            while running {
+                let msg = Arc::new(receiver.recv().unwrap());
+                unsafe {
+                    let msg_clone = msg.clone();
+                    // who cares, this is just debugging
+                    info!("{}", String::from_utf8_unchecked(msg_clone.to_vec()));
+                }
+                let msg_clone = msg.clone();
+
+                clients_clone.lock().unwrap()
+                    .iter()
+                    .for_each(|x: &Sender<Vec<u8>>| x.send(msg_clone.to_vec()).unwrap());
+            }
+            info!("finishing")
+        });
+
+        Self { sender: Arc::new(sender), clients, running, join_handle: Some(join_handle) }
+
     }
 
+    fn add_new_client(&mut self, Sender: Sender<Vec<u8>>) {
+        self.clients.lock().unwrap().push(Sender)
+    }
+}
+
+impl Drop for PuzzleChannels {
+    fn drop(&mut self) {
+        self.running = false;
+        self.join_handle.take().unwrap().join();
+        info!("finished")
+    }
 }
 
