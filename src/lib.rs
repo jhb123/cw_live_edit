@@ -13,7 +13,7 @@ pub enum HttpRequest {
     Post{ status_line: StatusLine, headers: HashMap<String,String>, body: Vec<u8> }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum HttpVerb {
     Get,
     Post
@@ -61,7 +61,7 @@ impl StatusLine {
         };
         let protocol = parts[2].trim().to_string();
         let route = parts[1].to_string();
-        Ok(StatusLine{ protocol, verb, route })
+        Ok(StatusLine{ protocol: protocol, verb, route: route })
 
     }
 }
@@ -101,7 +101,7 @@ impl HttpRequest {
             }
         }
     }
-
+   
     fn process_headers(req: &mut BufReader<&mut &TcpStream>) -> HashMap<String,String> {
         let headers = req
             .lines()

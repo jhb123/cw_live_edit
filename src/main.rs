@@ -1,13 +1,13 @@
 use std::{
     collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{mpsc::{self, Sender}, Arc, Mutex}, thread::{self, sleep, JoinHandle}, time::{self, Duration}
 };
-use cw_grid_server::{decode_client_frame, web_socket_accept, websocket_message, HttpRequest, ThreadPool};
+use cw_grid_server::{decode_client_frame, web_socket_accept, websocket_message, HttpRequest, HttpVerb, StatusLine, ThreadPool};
 use tera::Tera;
 use log::info;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref PUZZLE: Mutex<PuzzleChannels> = Mutex::new(PuzzleChannels::new());
+    static ref PUZZLE: Mutex<PuzzleChannel> = Mutex::new(PuzzleChannel::new());
 }
 
 
@@ -19,6 +19,7 @@ fn main() {
 
     let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)> = HashMap::new();
     routes.insert("/", index_handler);
+    routes.insert("/foo", index_handler);
     routes.insert("/hello", hello_handler);
     routes.insert("/crossword.js", crossword_js);
     routes.insert("/echo", echo);
@@ -68,19 +69,26 @@ struct Api {
 impl Api{
 
     fn handle_request(&self, req: &HttpRequest, stream: TcpStream){
+
+        let route = match req {
+            HttpRequest::Get { status_line, headers:_ } => status_line.route.as_str(),
+            HttpRequest::Post { status_line, headers: _, body: _ } => status_line.route.as_str(),
+        };
+
+        // base case
+        
         info!("{req}");
         match req {
-            HttpRequest::Get { status_line, headers: _ } => {
-                match self.routes.get(&status_line.route as &str) {
+            HttpRequest::Get { status_line, headers: headers } => {
+                match self.routes.get(route as &str) {
                     Some(handler) => handler(req, Arc::clone(&self.tera), stream),
-                    None => missing( Arc::clone(&self.tera), stream),
+                    None => missing( Arc::clone(&self.tera),stream)
                 }
-                
             },
-            HttpRequest::Post { status_line, headers: _, body: _ } => {
-                match self.routes.get(&status_line.route as &str){
+            HttpRequest::Post { status_line, headers: headers , body: body } => {
+                match self.routes.get(route as &str){
                     Some(handler) => handler(req, Arc::clone(&self.tera), stream),
-                    None => missing( Arc::clone(&self.tera),stream),
+                    None =>  missing( Arc::clone(&self.tera),stream),
                 }
             },
         }
@@ -158,62 +166,100 @@ fn echo(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     stream.write_all(&frame).unwrap();
     stream.set_read_timeout(Some(Duration::from_millis(10)));
 
-    let thread_safe_stream = Arc::new(Mutex::new(stream));
-
-    let thread_safe_stream_2 = thread_safe_stream.clone();
-
+    let stream = Arc::new(Mutex::new(stream));
     let (sender, receiver) = mpsc::channel::<Vec<u8>>();
 
     PUZZLE.lock().unwrap().add_new_client(sender);
 
+    let stream_clone = Arc::clone(&stream);
     thread::spawn(move || {
         loop{
             let msg = receiver.recv().unwrap();
             unsafe {
                 // who cares, this is just debugging        
                 let frame = websocket_message(&String::from_utf8_unchecked(msg));
-                thread_safe_stream_2.lock().unwrap().write_all(&frame).unwrap();
+                stream_clone.lock().unwrap().write_all(&frame).unwrap();
             }
         }
     });
 
-    thread::spawn(move || {
-        let sender = PUZZLE.lock().unwrap().sender.clone();
-        loop{
-            {
-                let mut st = thread_safe_stream.lock().unwrap();
-                let mut buf_reader = BufReader::new(&mut *st);
-                let _ = match decode_client_frame(&mut buf_reader) {
-                    Ok(msg) => sender.send(msg),
-                    Err(err) => {
-                        Ok(())
-                    },
-                };                
-            }
-            sleep(Duration::from_millis(10))
+    let sender = PUZZLE.lock().unwrap().sender.clone();
+    loop{
+        {
+            let mut st = stream.lock().unwrap();
+            let mut buf_reader = BufReader::new(&mut *st);
+            let _ = match decode_client_frame(&mut buf_reader) {
+                Ok(msg) => sender.send(msg),
+                Err(err) => {
+                    Ok(())
+                },
+            };                
         }
-    });
-
-    // let mut buf_reader = BufReader::new(&mut stream);
-    // let msg = decode_client_frame(&mut buf_reader).unwrap();
-    // let sender = PUZZLE.sender.clone();
-    // sender.send(msg);
-    // let msg = decode_client_frame(&mut buf_reader).unwrap();
-    // sender.send(msg);
-    // let msg = decode_client_frame(&mut buf_reader).unwrap();
-    // sender.send(msg);
+        sleep(Duration::from_millis(10))
+    }
 
 }
 
+// type PuzzlePool = HashMap<&str, PuzzleChannel>;
+struct PuzzlePool {
+    pool: HashMap<String, PuzzleChannel>
+}
+
+impl PuzzlePool{
+
+    fn new() -> Self {
+        let pool = HashMap::new();
+        Self { pool }
+    }
+
+    fn connect(req: &HttpRequest, mut stream: TcpStream) {
+
+        let handshake = Self::handshake(req).unwrap();
+        stream.write_all(handshake.as_bytes()).unwrap();
+
+        let route = match req {
+            HttpRequest::Get { status_line, headers:_ } => status_line.route.as_str(),
+            HttpRequest::Post { status_line, headers: _, body: _ } => status_line.route.as_str(),
+        };
+
+        // let;
+
+    }
+
+    fn handshake(req: &HttpRequest) -> Result<String, &str>{
+        let headers = match req {
+            HttpRequest::Get { status_line: _, headers } => headers,
+            HttpRequest::Post { status_line: _, headers: _, body: _ } => return Err("Do not use post for this"),
+        };
+        
+        let status_line = "HTTP/1.1 101 Switching Protocols";
+        info!("Response Status {}",status_line);
+        
+        let sender_key = headers.get("Sec-WebSocket-Key").unwrap();
+        let encoded_data = web_socket_accept(sender_key);
+    
+        let handshake = format!("{status_line}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {encoded_data}\r\n\r\n");
+        log::info!("Handshake:\n{}", handshake);
+
+        return Ok(handshake)
+    }
+
+
+
+}
+
+
+
+
 #[derive(Debug)]
-struct PuzzleChannels{
+struct PuzzleChannel{
     sender: Arc<mpsc::Sender<Vec<u8>>>,
     clients: Arc<Mutex<Vec<mpsc::Sender<Vec<u8>>>>>,
     running: bool,
     join_handle : Option<JoinHandle<()>>
 }
 
-impl PuzzleChannels {
+impl PuzzleChannel {
 
     fn new() -> Self {
         
@@ -249,7 +295,7 @@ impl PuzzleChannels {
     }
 }
 
-impl Drop for PuzzleChannels {
+impl Drop for PuzzleChannel {
     fn drop(&mut self) {
         self.running = false;
         self.join_handle.take().unwrap().join();
