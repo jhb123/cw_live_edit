@@ -1,29 +1,35 @@
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{mpsc::{self, Sender}, Arc, Mutex}, thread::{self, sleep, JoinHandle}, time::{self, Duration}
+    collections::HashMap, default, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{mpsc::{self, Sender}, Arc, Mutex}, thread::{self, sleep, JoinHandle}, time::{self, Duration}
 };
 use cw_grid_server::{decode_client_frame, web_socket_accept, websocket_message, HttpRequest, HttpVerb, StatusLine, ThreadPool};
+use regex::Regex;
 use tera::Tera;
-use log::info;
+use log::{info, warn};
 use lazy_static::lazy_static;
 
 lazy_static! {
     static ref PUZZLE: Mutex<PuzzleChannel> = Mutex::new(PuzzleChannel::new());
 }
 
-
+type RouteMapping = HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)>;
 
 fn main() {
     env_logger::init();
 
     info!("{:?}",*PUZZLE);
 
-    let mut routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)> = HashMap::new();
-    routes.insert("/", index_handler);
-    routes.insert("/foo", index_handler);
-    routes.insert("/hello", hello_handler);
-    routes.insert("/crossword.js", crossword_js);
-    routes.insert("/echo", echo);
-    
+    //let foo = Regex::new(r"\d+").unwrap();
+
+    let mut routes: RouteMapping = HashMap::new();
+    routes.insert(r"^/$", index_handler);
+    routes.insert(r"^/hello$", hello_handler);
+    routes.insert(r"^/foo/\d+$", variable_request_test);
+
+    routes.insert(r"^/crossword.js$", crossword_js);
+    routes.insert(r"^/echo$", echo);
+    routes.insert(r"^/puzzle/\d+$", echo);
+
+
     let tera = Tera::new("templates/**/*").unwrap();
     let tera_arc = Arc::new(tera);
     
@@ -62,7 +68,7 @@ fn handle_connection(mut stream: TcpStream, api: Arc<Api>) {
 
 #[derive(Clone)]
 struct Api {
-    routes: HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)>,
+    routes: RouteMapping,
     tera:  Arc<Tera>
 }
 
@@ -70,7 +76,7 @@ impl Api{
 
     fn handle_request(&self, req: &HttpRequest, stream: TcpStream){
 
-        let route = match req {
+        let incoming_route = match req {
             HttpRequest::Get { status_line, headers:_ } => status_line.route.as_str(),
             HttpRequest::Post { status_line, headers: _, body: _ } => status_line.route.as_str(),
         };
@@ -80,26 +86,38 @@ impl Api{
         info!("{req}");
         match req {
             HttpRequest::Get { status_line, headers: headers } => {
-                match self.routes.get(route as &str) {
-                    Some(handler) => handler(req, Arc::clone(&self.tera), stream),
-                    None => missing( Arc::clone(&self.tera),stream)
+                // Regex::new()
+                for (api_route, handler) in self.routes.iter() {
+                    let reg = Regex::new(api_route).unwrap();
+                    info!("regex:{}",reg);
+                    if reg.is_match(incoming_route) { 
+                        info!("Routing {incoming_route} to {api_route}");
+                        return handler(req, Arc::clone(&self.tera), stream);
+                    };
                 }
+                warn!("Didn't match any routes");
+                missing( Arc::clone(&self.tera),stream)
+
             },
             HttpRequest::Post { status_line, headers: headers , body: body } => {
-                match self.routes.get(route as &str){
-                    Some(handler) => handler(req, Arc::clone(&self.tera), stream),
-                    None =>  missing( Arc::clone(&self.tera),stream),
+                for (route, handler) in self.routes.iter() {
+                    let reg = Regex::new(route).unwrap();
+                    if reg.is_match(route) { 
+                        return handler(req, Arc::clone(&self.tera), stream);
+                    };
                 }
+                missing( Arc::clone(&self.tera),stream)
             },
         }
 
+
     }
 
-    fn register_routes(routes:  HashMap<&'static str, fn(&HttpRequest,  Arc<Tera>, TcpStream)>, tera:  Arc<Tera>) -> Self {
+    fn register_routes(routes:  RouteMapping, tera:  Arc<Tera>) -> Self {
         Self{routes, tera}
     }
-
 }
+
 
 fn hello_handler(_req: &HttpRequest, tera:  Arc<Tera>, mut stream: TcpStream){
     thread::sleep(Duration::from_secs(5));
@@ -123,6 +141,26 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream){
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
     stream.write_all(response.as_bytes()).unwrap();
 }
+
+fn variable_request_test(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream){
+    let response_status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}",response_status_line);
+    let mut context = tera::Context::new();
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => status_line,
+        HttpRequest::Post { status_line,.. } => status_line,
+    };
+
+    let path_info = Regex::new(r"(?<num>\d+)").unwrap();
+    let caps = path_info.captures(&status_line.route).unwrap();
+    info!("{:?}",&caps["num"]);
+    context.insert("data", &caps["num"]);
+    let contents = tera.render("foo.html", &context).unwrap();
+    let length = contents.len();
+    let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+    stream.write_all(response.as_bytes()).unwrap();
+}
+
 
 fn missing(tera: Arc<Tera>, mut stream: TcpStream){
     let status_line = "HTTP/1.1 404 Ok";
@@ -302,4 +340,5 @@ impl Drop for PuzzleChannel {
         info!("finished")
     }
 }
+
 

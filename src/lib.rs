@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, fmt, io::{self, prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Mutex, Arc}, thread
+    collections::HashMap, fmt, io::{self, prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Arc, Mutex}, thread
 };
 use base64::{Engine as _, engine::general_purpose};
 use crypto::{digest::Digest, sha1::Sha1};
@@ -355,13 +355,11 @@ fn websocket_content_len(data: &[u8]) -> Result<u64, &str>{
 
 #[cfg(test)]
 mod tests {
-    #[test]
 
+    #[test]
     fn web_socket_accept_header() {
         let actual = crate::web_socket_accept("dGhlIHNhbXBsZSBub25jZQ==");
         assert_eq!(actual, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
     }
-
-    
 
 }
