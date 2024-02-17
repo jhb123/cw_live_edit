@@ -1,15 +1,15 @@
 use cw_grid_server::{
-    decode_client_frame, web_socket_accept, websocket_handshake, websocket_message, HttpRequest,
+    decode_client_frame, websocket_handshake, websocket_message, HttpRequest,
     ThreadPool,
 };
 use lazy_static::lazy_static;
 use log::{info, warn};
 use regex::Regex;
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, ops::DerefMut, sync::{
+    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
-    }, thread::{self, sleep, JoinHandle}, time::Duration
+    }, thread::{self, sleep}, time::Duration
 };
 use tera::Tera;
 
@@ -92,7 +92,7 @@ impl Api {
         match req {
             HttpRequest::Get {
                 status_line,
-                headers: headers,
+                headers,
             } => {
                 // Regex::new()
                 for (api_route, handler) in self.routes.iter() {
@@ -108,8 +108,8 @@ impl Api {
             }
             HttpRequest::Post {
                 status_line,
-                headers: headers,
-                body: body,
+                headers,
+                body,
             } => {
                 for (route, handler) in self.routes.iter() {
                     let reg = Regex::new(route).unwrap();
