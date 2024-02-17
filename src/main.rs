@@ -3,7 +3,7 @@ use cw_grid_server::{
     ThreadPool,
 };
 use lazy_static::lazy_static;
-use log::{info, warn};
+use log::{error, info, warn};
 use regex::Regex;
 use std::{
     collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
@@ -90,10 +90,7 @@ impl Api {
 
         info!("{req}");
         match req {
-            HttpRequest::Get {
-                status_line,
-                headers,
-            } => {
+            HttpRequest::Get { .. } => {
                 // Regex::new()
                 for (api_route, handler) in self.routes.iter() {
                     let reg = Regex::new(api_route).unwrap();
@@ -106,11 +103,7 @@ impl Api {
                 warn!("Didn't match any routes");
                 missing(Arc::clone(&self.tera), stream)
             }
-            HttpRequest::Post {
-                status_line,
-                headers,
-                body,
-            } => {
+            HttpRequest::Post { .. } => {
                 for (route, handler) in self.routes.iter() {
                     let reg = Regex::new(route).unwrap();
                     if reg.is_match(route) {
@@ -189,7 +182,7 @@ fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, mut stream: TcpStream) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+fn puzzle_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
         HttpRequest::Post { status_line, .. } => status_line,
@@ -322,7 +315,10 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
                         let sender = puzzle_channel.lock().unwrap().sender.clone();
                         sender.send(msg)
                     },
-                    Err(err) => Ok(()),
+                    Err(err) => {
+                        error!("{err}");
+                        Ok(())
+                    },
                 };
             }
             sleep(Duration::from_millis(10))
