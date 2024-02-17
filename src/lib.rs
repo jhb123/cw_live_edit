@@ -353,6 +353,24 @@ fn websocket_content_len(data: &[u8]) -> Result<u64, &str>{
     // 
 }
 
+pub fn websocket_handshake(req: &HttpRequest) -> Result<String, &str>{
+    let headers = match req {
+        HttpRequest::Get { status_line: _, headers } => headers,
+        HttpRequest::Post { status_line: _, headers: _, body: _ } => return Err("Do not use post for this"),
+    };
+    
+    let status_line = "HTTP/1.1 101 Switching Protocols";
+    info!("Response Status {}",status_line);
+    
+    let sender_key = headers.get("Sec-WebSocket-Key").unwrap();
+    let encoded_data = web_socket_accept(sender_key);
+
+    let handshake = format!("{status_line}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {encoded_data}\r\n\r\n");
+    log::info!("Handshake:\n{}", handshake);
+
+    return Ok(handshake)
+}
+
 #[cfg(test)]
 mod tests {
 
