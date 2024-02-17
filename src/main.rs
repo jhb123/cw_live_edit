@@ -15,7 +15,7 @@ use tera::Tera;
 
 lazy_static! {
     static ref PUZZLEPOOL: Mutex<PuzzlePool> = Mutex::new(PuzzlePool::new());
-    static ref POOL: ThreadPool = ThreadPool::new(16);
+    static ref THREADPOOL: ThreadPool = ThreadPool::new(16);
 }
 
 type RouteMapping = HashMap<&'static str, fn(&HttpRequest, Arc<Tera>, TcpStream)>;
@@ -49,7 +49,7 @@ fn main() {
         let stream = stream.unwrap();
         let api_arc_clone = Arc::clone(&api_arc);
         // let tera_arc_clone = Arc::clone(&tera_arc);
-        POOL.execute(|| {
+        THREADPOOL.execute(|| {
             handle_connection(stream, api_arc_clone);
         });
     }
@@ -244,7 +244,7 @@ impl PuzzleChannel {
         let clients = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
 
-        POOL.execute(move || {
+        THREADPOOL.execute(move || {
             while running {
                 let msg = Arc::new(receiver.recv().unwrap());
                 unsafe {
@@ -294,7 +294,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
     puzzle_channel.lock().unwrap().add_new_client(sender);
 
     let stream_clone = Arc::clone(&stream);
-    POOL.execute(move || {
+    THREADPOOL.execute(move || {
         loop {
             let msg = receiver.recv().unwrap();
             unsafe {
@@ -305,7 +305,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
         }
     });
 
-    POOL.execute(move || {
+    THREADPOOL.execute(move || {
         loop {
             {
                 let mut st = stream.lock().unwrap();
