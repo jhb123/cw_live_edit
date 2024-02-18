@@ -50,9 +50,19 @@ class CrosswordGrid extends HTMLElement {
                 this.grid.focus()
 
                 this.grid.addEventListener('keydown', (key) => {
-                    this.activeClue.highlight()
-                    let cell = this.activeClue.cellIterator.next().value
-                    this.activeClue.setActiveCell(cell)
+                    if (this.activeClue===null) {
+
+                    } else {
+                        this.activeClue.highlight()
+                        // console.log(key)
+                        if (key.key === "Backspace"){
+                            let cell = this.activeClue.backwardCellIterator.next().value
+                            this.activeClue.setActiveCell(cell)
+                        } else {
+                            let cell = this.activeClue.forwardCellIterator.next().value
+                            this.activeClue.setActiveCell(cell)
+                        }
+                    }
                 })
                 // this.grid.addEventListener('click', () => {
                 //     console.log("grid clicked")
@@ -186,7 +196,8 @@ class Clue {
         this.clueName = clueName
         this.cells = []
         this.hint = ""
-        this.cellIterator = this.cycleCell()
+        this.forwardCellIterator = this.moveCellForward()
+        this.backwardCellIterator = this.moveCellBackward()
         this.cellIdx = null
 
     }
@@ -211,12 +222,23 @@ class Clue {
         console.log(`active cell ${this.cells[this.cellIdx].coords}`)
     }
 
-    *cycleCell() {
+    *moveCellForward() {
         while (true) {
             if (this.cellIdx === this.cells.length){
                 yield this.cells[this.cellIdx]
             } else {
                 this.cellIdx++
+                yield this.cells[this.cellIdx]
+            }                
+        }
+    }
+
+    *moveCellBackward() {
+        while (true) {
+            if (this.cellIdx === 0){
+                yield this.cells[this.cellIdx]
+            } else {
+                this.cellIdx--
                 yield this.cells[this.cellIdx]
             }                
         }
