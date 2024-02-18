@@ -43,22 +43,26 @@ impl Crossword {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Clue {
     hint: String,
-    cells: Vec<(usize,usize)>
+    cells: Vec<(usize,usize, char)>
 }
 
 impl Clue {
     fn new(len:usize, start: (usize,usize), hint: &str, direction: Direction) -> Self {
-        let mut cells = vec![(0,0); len];
+        let mut cells = vec![(0,0, ' '); len];
 
         match direction {
             Direction::Across => {
                 for i in 0..len {
-                    cells[i] = (start.0 + i, start.1)
+                    // cells[i] = (start.0 + i, start.1)
+                    cells[i].0 = start.0 + i;
+                    cells[i].1 = start.1;
+
                 };
             },
             Direction::Down => {
                 for i in 0..len {
-                    cells[i] = (start.0, start.1+i)
+                    cells[i].0 = start.0;
+                    cells[i].1 = start.1 + i;
                 };
             }
         }

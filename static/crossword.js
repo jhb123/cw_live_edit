@@ -56,9 +56,11 @@ class CrosswordGrid extends HTMLElement {
                         this.activeClue.highlight()
                         // console.log(key)
                         if (key.key === "Backspace"){
+                            this.activeClue.getActiveCell().updateText("")
                             let cell = this.activeClue.backwardCellIterator.next().value
                             this.activeClue.setActiveCell(cell)
                         } else {
+                            this.activeClue.getActiveCell().updateText(key.key)
                             let cell = this.activeClue.forwardCellIterator.next().value
                             this.activeClue.setActiveCell(cell)
                         }
@@ -149,10 +151,18 @@ class Cell {
         div.style.background = "#ffffffff";
         div.style.boxSizing = "border-box";
         div.style.border = '1px solid black';
+        div.style.textAlign = "center"
+        div.style.verticalAlign = "middle"
+        
+        this.text = ""
         this.div = div;
         this.cluesPartof = []
         this.clueIterator = this.cycleClue()
         this.coords = cellData
+
+        this.updateText(cellData[2])
+
+
     }
 
     handleClick() {
@@ -163,6 +173,12 @@ class Cell {
             clue.highlight()
             return clue
         }
+    }
+
+    updateText(text) {
+        this.text = text
+        this.div.textContent = this.text 
+
     }
 
     *cycleClue() {
@@ -206,6 +222,10 @@ class Clue {
         this.cells.forEach( cell => {
             cell.handleHighlight()
         })
+    }
+
+    getActiveCell() {
+        return this.cells[this.cellIdx]
     }
 
     setActiveCell(cell) {
