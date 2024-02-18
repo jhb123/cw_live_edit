@@ -26,6 +26,8 @@ class CrosswordGrid extends HTMLElement {
         this.downHintsParent.appendChild(this.downHints)
 
         this.data = null;
+        this.data2 = null;
+
         this.scale = 30
         this.cells = new Map();
 
@@ -50,76 +52,48 @@ class CrosswordGrid extends HTMLElement {
 
 
     drawFreshGrid() {
-        for (let clueName in this.data.across) {
-
-            let clueClick = new Event(`${clueName}-click`);
-
-            let clueData = this.data.across[clueName];
-            let hintEl = this.createHintElement(clueName, clueData);
-            this.acrossHints.appendChild(hintEl);
-            for (let cell in clueData.cells) {
-                let cellData = clueData.cells[cell];
-                let key = cellData.join(',')
-                if (!this.cells.has(key)) {
-                    let cell = new Cell(cellData, this.scale);
-                    this.cells.set(key, cell)
-                }
-                let cellClass = this.cells.get(key)
-                // let div = this.cells[cell]
-                cellClass.div.addEventListener('click', () => {
-
-                    var childNodes = this.grid.childNodes
-                    childNodes.forEach(node => {
-                        node.style.background = "#ffffffff"
-                        node.dispatchEvent(clueClick)
-                        cellClass.activeClue = `${clueName}-click`
-                        console.log(`setting active to ${cellClass.activeClue}`)
-                    })
-
-                })
-                cellClass.div.addEventListener(`${clueName}-click`, () => {
-                    console.log(`${clueName}-click`)
-                    cellClass.div.style.background = "green"
-                })
-                this.grid.append(cellClass.div);
-                this.expandBackgroundElement(cellData);
-            }
+        for (let incomingClueName in this.data.across) {
+            let incomingClueData = this.data.across[incomingClueName];
+            this.handleIncomingClue(incomingClueName, this.acrossHints, incomingClueData);
         }
 
-        for (let clueName in this.data.down) {
-            let clueClick = new Event(`${clueName}-click`);
+        for (let incomingClueName in this.data.down) {
+            let incomingClueData = this.data.down[incomingClueName];
+            this.handleIncomingClue(incomingClueName, this.downHints, incomingClueData);
+        }
 
-            let clueData = this.data.down[clueName];
-            let hintEl = this.createHintElement(clueName, clueData);
-            this.downHints.appendChild(hintEl);
-            for (let cell in clueData.cells) {
-                let cellData = clueData.cells[cell];
-                let key = cellData.join(',')
-                if (!this.cells.has(key)) {
-                    let cell = new Cell(cellData, this.scale);
-                    // let div = cell.div
-                    this.cells.set(key, cell)
-                }
-                let cellClass = this.cells.get(key)
-                // let div = this.cells[cell]
-                cellClass.div.addEventListener('click', () => {
+    }
 
-                    var childNodes = this.grid.childNodes
+    handleIncomingClue(incomingClueName, clueDirection, incomingClueData) {
+        let hintEl = this.createHintElement(incomingClueName, incomingClueData);
+        clueDirection.appendChild(hintEl);
+
+        let clue = new Clue(incomingClueName);
+
+        for (let incomingCellData in incomingClueData.cells) {
+            let cellData = incomingClueData.cells[incomingCellData];
+            let key = cellData.join(',');
+            if (!this.cells.has(key)) {
+                let cell = new Cell(cellData, this.scale);
+                cell.div.addEventListener('click', () => {
+                    var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
-                        node.style.background = "#ffffffff"
-                        node.dispatchEvent(clueClick)
-                        cellClass.activeClue = `${clueName}-click`
-                        console.log(`setting active to ${cellClass.activeClue}`)
-    
-                    })
-                })
-                cellClass.div.addEventListener(`${clueName}-click`, () => {
-                    console.log(`${clueName}-click`)
-                    cellClass.div.style.background = "green"
-                })
-                this.grid.append(cellClass.div);
-                this.expandBackgroundElement(cellData);
+                        node.style.background = "#ffffffff";
+                    });
+                    cell.handleClick();
+                });
+
+                this.cells.set(key, cell);
             }
+            let cellClass = this.cells.get(key);
+
+            clue.cells.push(cellClass);
+            cellClass.cluesPartof.push(clue);
+
+
+
+            this.grid.append(cellClass.div);
+            this.expandBackgroundElement(cellData);
         }
     }
 
@@ -154,9 +128,59 @@ class Cell {
         div.style.boxSizing = "border-box";
         div.style.border = '1px solid black';
         this.div = div;
-        this.activeClue = ""
+        this.cluesPartof = []
+        this.clueIterator = this.cycleClue()
+        this.coords = cellData
+
     }
 
+    handleClick() {
+        let clue = this.clueIterator.next().value
+        if (clue === null) {
+            console.warn("cell not part of a clue")
+        } else {
+            clue.highlight()
+        }
+    }
+
+    *cycleClue() {
+        var index = 0;
+        while (true) {
+            if (this.cluesPartof.length === 0 ) {  
+                console.warn("cell is not part of any clue")
+                yield null;    
+            }
+            else {
+                yield this.cluesPartof[index]
+                index++
+                if (index === this.cluesPartof.length){
+                    index = 0;
+                }
+            }
+        }
+    }
+
+    handleHighlight() {
+        this.div.style.background = "green"
+    }
+
+
+
+
+}
+
+class Clue {
+    constructor(clueName) {
+        this.clueName = clueName
+        this.cells = []
+        this.hint = ""
+    }
+
+    highlight() {
+        this.cells.forEach( cell => {
+            cell.handleHighlight()
+        })
+    }
 
 }
 
