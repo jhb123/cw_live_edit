@@ -1,6 +1,5 @@
 use cw_grid_server::{
-    decode_client_frame, websocket_handshake, websocket_message, HttpRequest,
-    ThreadPool,
+    crossword::Crossword, decode_client_frame, websocket_handshake, websocket_message, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -31,6 +30,9 @@ fn main() {
     routes.insert(r"^/foo/\d+$", variable_request_test);
 
     routes.insert(r"^/crossword.js$", crossword_js);
+    routes.insert(r"^/testCrossword/data$", test_crossword);
+    routes.insert(r"^/testCrossword$", crossword_page);
+
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
 
     let tera = Tera::new("templates/**/*").unwrap();
@@ -161,8 +163,29 @@ fn variable_request_test(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStre
     stream.write_all(response.as_bytes()).unwrap();
 }
 
+fn test_crossword(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+    let status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}", status_line);
+    let grid = Crossword::demo_grid();
+    let contents = serde_json::to_string(&grid).unwrap();
+    let length = contents.len();
+    let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+    stream.write_all(response.as_bytes()).unwrap();
+}
+
+fn crossword_page(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+    let status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}", status_line);
+    let mut context = tera::Context::new();
+    let contents = tera.render("crossword.html", &context).unwrap();
+    let length = contents.len();
+    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+    stream.write_all(response.as_bytes()).unwrap();
+}
+
+
 fn missing(tera: Arc<Tera>, mut stream: TcpStream) {
-    let status_line = "HTTP/1.1 404 Ok";
+    let status_line = "HTTP/1.1 404 Not Found";
     info!("Response Status {}", status_line);
     let mut context = tera::Context::new();
     context.insert("status", "404");
