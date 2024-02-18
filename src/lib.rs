@@ -1,4 +1,5 @@
 pub mod crossword;
+pub mod db;
 
 use std::{
     collections::HashMap, fmt, io::{self, prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Arc, Mutex}, thread

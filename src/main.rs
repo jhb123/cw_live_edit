@@ -1,11 +1,11 @@
 use cw_grid_server::{
-    crossword::Crossword, decode_client_frame, websocket_handshake, websocket_message, HttpRequest, ThreadPool
+    crossword::Crossword, db::{get_puzzle, init_db}, decode_client_frame, websocket_handshake, websocket_message, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use regex::Regex;
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
+    collections::HashMap, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
     }, thread::{self, sleep}, time::Duration
@@ -22,6 +22,10 @@ type RouteMapping = HashMap<&'static str, fn(&HttpRequest, Arc<Tera>, TcpStream)
 fn main() {
     env_logger::init();
 
+    if let Err(e) = init_db() {
+        warn!("{}",e)
+    }
+    
     info!("{:?}", *PUZZLEPOOL);
 
     let mut routes: RouteMapping = HashMap::new();
@@ -34,6 +38,9 @@ fn main() {
     routes.insert(r"^/testCrossword$", crossword_page);
 
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
+
+    routes.insert(r"^/dbTest/\d+$", db_test_handler);
+
 
     let tera = Tera::new("templates/**/*").unwrap();
     let tera_arc = Arc::new(tera);
@@ -224,6 +231,33 @@ fn puzzle_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
     // pass info into the puzzle pool so that this request can be routed to the correct puzzle channel
     PUZZLEPOOL.lock().unwrap().connect_client(puzzle_num, stream);
 }
+
+fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+    let response_status_line = "HTTP/1.1 200 Ok";
+
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => status_line,
+        HttpRequest::Post { status_line, .. } => status_line,
+    };
+
+    let path_info = Regex::new(r"(?<num>\d+)").unwrap();
+    let caps = path_info.captures(&status_line.route).unwrap();
+    let puzzle_num = caps["num"].to_string();
+    
+
+    if let Ok(mut file) = get_puzzle(&format!("{puzzle_num}.json")) {
+        let mut contents = String::new();
+        let length = file.read_to_string(&mut contents).unwrap();
+    
+        let response = format!("{response_status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
+        stream.write_all(response.as_bytes()).unwrap();
+    } else {
+        missing(tera, stream)
+    }
+
+}
+
+
 
 #[derive(Debug)]
 struct PuzzlePool {
