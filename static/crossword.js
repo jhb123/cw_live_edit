@@ -26,10 +26,10 @@ class CrosswordGrid extends HTMLElement {
         this.downHintsParent.appendChild(this.downHints)
 
         this.data = null;
-        this.data2 = null;
 
         this.scale = 30
         this.cells = new Map();
+        this.activeClue = null;
 
         this.fetchData().then(() => {
         });
@@ -46,6 +46,17 @@ class CrosswordGrid extends HTMLElement {
             .then(data => {
                 this.data = data
                 this.drawFreshGrid()
+                this.grid.tabIndex = 0
+                this.grid.focus()
+
+                this.grid.addEventListener('keydown', (key) => {
+                    this.activeClue.highlight()
+                    let cell = this.activeClue.cellIterator.next().value
+                    this.activeClue.setActiveCell(cell)
+                })
+                // this.grid.addEventListener('click', () => {
+                //     console.log("grid clicked")
+                // })
 
             })
     }
@@ -80,7 +91,8 @@ class CrosswordGrid extends HTMLElement {
                     childNodes.forEach(node => {
                         node.style.background = "#ffffffff";
                     });
-                    cell.handleClick();
+                    this.activeClue = cell.handleClick();
+                    this.activeClue.setActiveCell(cell)
                 });
 
                 this.cells.set(key, cell);
@@ -131,7 +143,6 @@ class Cell {
         this.cluesPartof = []
         this.clueIterator = this.cycleClue()
         this.coords = cellData
-
     }
 
     handleClick() {
@@ -140,6 +151,7 @@ class Cell {
             console.warn("cell not part of a clue")
         } else {
             clue.highlight()
+            return clue
         }
     }
 
@@ -174,12 +186,40 @@ class Clue {
         this.clueName = clueName
         this.cells = []
         this.hint = ""
+        this.cellIterator = this.cycleCell()
+        this.cellIdx = null
+
     }
 
     highlight() {
         this.cells.forEach( cell => {
             cell.handleHighlight()
         })
+    }
+
+    setActiveCell(cell) {
+        for(var i = 0; i < this.cells.length; ++i)  {
+            if (this.cells[i] === cell) {
+                this.cellIdx = i
+                this.cells[this.cellIdx].div.style.background = "red"
+                console.log(`active cell ${this.cells[this.cellIdx].coords}`)
+                return
+            }
+        }
+        this.cellIdx = this.cells.length - 1
+        this.cells[this.cellIdx].div.style.background = "red"
+        console.log(`active cell ${this.cells[this.cellIdx].coords}`)
+    }
+
+    *cycleCell() {
+        while (true) {
+            if (this.cellIdx === this.cells.length){
+                yield this.cells[this.cellIdx]
+            } else {
+                this.cellIdx++
+                yield this.cells[this.cellIdx]
+            }                
+        }
     }
 
 }
