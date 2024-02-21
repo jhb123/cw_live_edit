@@ -1,11 +1,11 @@
 use cw_grid_server::{
-    crossword::Crossword, db::{get_puzzle, init_db}, decode_client_frame, websocket_handshake, websocket_message, HttpRequest, ThreadPool
+    crossword::Crossword, db::{get_puzzle, init_db}, websockets::{decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use regex::Regex;
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
+    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, ptr, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
     }, thread::{self, sleep}, time::Duration
@@ -50,7 +50,7 @@ fn main() {
 
     // let pool = ThreadPool::new(4);
 
-    let addr = "127.0.0.1:5051";
+    let addr = "127.0.0.1:5555";
 
     let listener = TcpListener::bind(addr).unwrap();
     info!("Started on: http://{addr}");
@@ -170,7 +170,7 @@ fn variable_request_test(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStre
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn test_crossword(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+fn test_crossword(_req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
     let grid = Crossword::demo_grid();
@@ -183,7 +183,7 @@ fn test_crossword(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
 fn crossword_page(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
-    let mut context = tera::Context::new();
+    let context = tera::Context::new();
     let contents = tera.render("crossword.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
@@ -354,6 +354,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
     THREADPOOL.execute(move || {
         loop {
             let msg = receiver.recv().unwrap();
+            info!("received message");
             unsafe {
                 // who cares, this is just debugging
                 let frame = websocket_message(&String::from_utf8_unchecked(msg));
@@ -370,16 +371,29 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
                 let _ = match decode_client_frame(&mut buf_reader) {
                     Ok(msg) => {
                         let sender = puzzle_channel.lock().unwrap().sender.clone();
-                        sender.send(msg)
+                        match msg.opcode {
+                            OpCode::Continuation => todo!(),
+                            OpCode::Ping => todo!(),
+                            OpCode::Pong => todo!(),
+                            OpCode::Close => {
+                                sender.send(msg.body);
+                                break
+                            },
+                            OpCode::Reserved => panic!("Cannot handle this opcode"),
+                            OpCode::Text => sender.send(msg.body),
+                            OpCode::Binary => sender.send(msg.body),
+                        }
                     },
                     Err(err) => {
                         error!("{err}");
-                        Ok(())
+                        panic!("{err}")
                     },
                 };
             }
             sleep(Duration::from_millis(10))
         }
+        // puzzle_channel;
+        info!("finished reading websocket from client")
     });
     
 
