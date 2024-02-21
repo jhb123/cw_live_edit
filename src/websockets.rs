@@ -62,12 +62,7 @@ pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::R
 
     // see  RFC 6455: https://www.rfc-editor.org/rfc/rfc6455.html#section-5.3
     let mut frame_header = vec![0; 2]; 
-    match buf_reader.read_exact(&mut frame_header) {
-        Ok(_) => info!("read the buffer"),
-        Err(e) => {
-            panic!("{:?}",e)
-        },
-    };
+    buf_reader.read_exact(&mut frame_header)?;
 
     // opt codes
     let opcode = (frame_header[0] & 0b0000_1111) as u8;

@@ -50,7 +50,7 @@ fn main() {
 
     // let pool = ThreadPool::new(4);
 
-    let addr = "127.0.0.1:5555";
+    let addr = "127.0.0.1:5051";
 
     let listener = TcpListener::bind(addr).unwrap();
     info!("Started on: http://{addr}");
@@ -354,7 +354,6 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
     THREADPOOL.execute(move || {
         loop {
             let msg = receiver.recv().unwrap();
-            info!("received message");
             unsafe {
                 // who cares, this is just debugging
                 let frame = websocket_message(&String::from_utf8_unchecked(msg));
@@ -385,8 +384,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
                         }
                     },
                     Err(err) => {
-                        error!("{err}");
-                        panic!("{err}")
+                        Ok(())
                     },
                 };
             }
