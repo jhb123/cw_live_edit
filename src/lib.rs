@@ -158,13 +158,13 @@ impl fmt::Display for HttpRequest {
 #[allow(dead_code)]
 pub struct ThreadPool{
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    sender: Option<mpsc::Sender<Job>>,
 }
 
 #[allow(dead_code)]
 struct Worker {
     id: usize,
-    thread: thread::JoinHandle<()>
+    thread: Option<thread::JoinHandle<()>>
     // receiver: mpsc::Receiver<Job>,
 }
 
@@ -177,10 +177,11 @@ impl Worker {
             let job = receiver.lock().unwrap().recv().unwrap();
             info!("Worker {} received Job, executing", id);
             job();
+            info!("Worker {} finished Job, freeing", id);
         });
 
         info!("Creating worker: {}",id);
-        Worker { id, thread }
+        Worker { id, thread : Some(thread) }
     }
 }
 
@@ -197,13 +198,13 @@ impl ThreadPool {
             workers.push(Worker::new(id,Arc::clone(&receiver)));
         }
 
-        ThreadPool {workers, sender}
+        ThreadPool {workers, sender: Some(sender)}
     }
 
         pub fn execute<F>(&self, f: F) where F: FnOnce() + Send + 'static {
             let job = Box::new(f);
 
-            self.sender.send(job).unwrap();    
+            self.sender.as_ref().unwrap().send(job).unwrap();    
     }
 
 
@@ -215,6 +216,19 @@ impl ThreadPool {
 
     // }
 
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(thread) = worker.thread.take() {
+                thread.join().unwrap();
+            }
+
+        }
+    }
 }
 
 #[allow(dead_code)]
