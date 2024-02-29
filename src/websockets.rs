@@ -59,11 +59,7 @@ pub fn websocket_message(msg: &str) -> Vec<u8>{
 }
 
 pub fn close_websocket_message() -> Vec<u8>{
-    let mut payload: Vec<u8> = Vec::new();
-
-    payload.push(0b1000_1000);
-
-    payload
+    vec![0x88, 0x02, 0x03, 0xE8]
 }
 
 pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::Result<Message> {
