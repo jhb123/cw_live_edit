@@ -58,12 +58,19 @@ pub fn websocket_message(msg: &str) -> Vec<u8>{
     payload
 }
 
+pub fn close_websocket_message() -> Vec<u8>{
+    let mut payload: Vec<u8> = Vec::new();
+
+    payload.push(0b1000_1000);
+
+    payload
+}
+
 pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::Result<Message> {
 
     // see  RFC 6455: https://www.rfc-editor.org/rfc/rfc6455.html#section-5.3
     let mut frame_header = vec![0; 2]; 
     buf_reader.read_exact(&mut frame_header)?;
-
     // opt codes
     let opcode = (frame_header[0] & 0b0000_1111) as u8;
     let opcode = match opcode {

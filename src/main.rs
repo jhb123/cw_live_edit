@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::Crossword, db::{get_puzzle, init_db}, websockets::{decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::Crossword, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{info, warn};
@@ -368,10 +368,12 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
                 }
             }
             let msg = receiver.recv().unwrap();
-            unsafe {
-                // who cares, this is just debugging
-                let frame = websocket_message(&String::from_utf8_unchecked(msg));
-                stream_clone.lock().unwrap().write_all(&frame).unwrap();
+            match String::from_utf8(msg){
+                Ok(s) => {
+                    let frame = websocket_message(&s);
+                    stream_clone.lock().unwrap().write_all(&frame).unwrap();
+                }
+                Err(e) => warn!("cannot turn msg ({:?}) into utf-8 string", e),
             }
         }
         info!("finished writing data to client");
@@ -391,6 +393,8 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
                             OpCode::Pong => todo!(),
                             OpCode::Close => {
                                 sender.send(msg.body).unwrap();
+                                let frame = close_websocket_message();
+                                st.write_all(&frame).unwrap();
                                 terminate_sender.send(true).unwrap();
                                 break
                             },
