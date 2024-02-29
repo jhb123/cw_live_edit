@@ -1,4 +1,4 @@
-use std::{env, fs::{self, DirEntry, File, FileType}, io::Error, path::Path};
+use std::{env, fs::{self, DirEntry, File}, io::Error, path::Path};
 
 
 

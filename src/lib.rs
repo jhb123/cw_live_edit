@@ -1,11 +1,10 @@
 pub mod crossword;
 pub mod db;
+pub mod websockets;
 
 use std::{
-    collections::HashMap, fmt, io::{self, prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Arc, Mutex}, thread
+    collections::HashMap, fmt, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Arc, Mutex}, thread
 };
-use base64::{Engine as _, engine::general_purpose};
-use crypto::{digest::Digest, sha1::Sha1};
 use log::{info, warn};
 
 #[derive(Debug)]
@@ -159,13 +158,13 @@ impl fmt::Display for HttpRequest {
 #[allow(dead_code)]
 pub struct ThreadPool{
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    sender: Option<mpsc::Sender<Job>>,
 }
 
 #[allow(dead_code)]
 struct Worker {
     id: usize,
-    thread: thread::JoinHandle<()>
+    thread: Option<thread::JoinHandle<()>>
     // receiver: mpsc::Receiver<Job>,
 }
 
@@ -178,10 +177,11 @@ impl Worker {
             let job = receiver.lock().unwrap().recv().unwrap();
             info!("Worker {} received Job, executing", id);
             job();
+            info!("Worker {} finished Job, freeing", id);
         });
 
         info!("Creating worker: {}",id);
-        Worker { id, thread }
+        Worker { id, thread : Some(thread) }
     }
 }
 
@@ -198,13 +198,13 @@ impl ThreadPool {
             workers.push(Worker::new(id,Arc::clone(&receiver)));
         }
 
-        ThreadPool {workers, sender}
+        ThreadPool {workers, sender: Some(sender)}
     }
 
         pub fn execute<F>(&self, f: F) where F: FnOnce() + Send + 'static {
             let job = Box::new(f);
 
-            self.sender.send(job).unwrap();    
+            self.sender.as_ref().unwrap().send(job).unwrap();    
     }
 
 
@@ -216,6 +216,19 @@ impl ThreadPool {
 
     // }
 
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(thread) = worker.thread.take() {
+                thread.join().unwrap();
+            }
+
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -249,138 +262,6 @@ impl Response  {
 
         let c = Content::TextCss { content: "123".to_owned() };
         Response {status_line: status_line.to_string(), headers, content: c }
-    }
-
-}
-
-pub fn web_socket_accept(sender_key: &str) -> String {
-    let magic_str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    let full_str = sender_key.to_owned()+magic_str;
-    let mut hasher = Sha1::new();
-
-    hasher.input_str(&full_str);
-
-    let bytes_num = hasher.output_bytes();
-
-    let mut buf = vec![0;bytes_num];
-    hasher.result(&mut buf);
-    general_purpose::STANDARD.encode(buf)
-}
-
-pub fn websocket_message(msg: &str) -> Vec<u8>{
-    let mut payload: Vec<u8> = Vec::new();
-
-    // FIN bit: 1 (final fragment)
-    payload.push(0b1000_0001); // FIN bit: 1, Opcode: 1 (text frame)
-
-    // Payload length: 13 (length of "Hello, WebSocket!")
-    let len = msg.len() as u8;
-    payload.push(len);
-
-    // Payload data: "Hello, WebSocket!"
-    payload.extend_from_slice(msg.as_bytes());
-
-    for byte in &payload {
-        print!("{:02X} ", *byte);
-    }
-    // info!("{}",bits_string);
-    payload
-}
-
-
-pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::Result<Vec<u8>> {
-
-    // see  RFC 6455: https://www.rfc-editor.org/rfc/rfc6455.html#section-5.3
-    let mut frame_header = vec![0; 2];   
-    buf_reader.read_exact(&mut frame_header)?;
-    let mut payload_len = (frame_header[1] & 0b0111_1111) as u64;
-    let mut masking_key = vec![0;4];
-
-    info!("7 bit payload len: {}", payload_len);
-    match payload_len {
-        0..=125 => {
-            frame_header = vec![0; 4];
-            buf_reader.read_exact(&mut frame_header).unwrap();
-            masking_key = frame_header.try_into().unwrap();
-        }
-        126 => {
-            frame_header = vec![0; 6];
-            buf_reader.read_exact(&mut frame_header).unwrap();
-            payload_len = websocket_content_len(&frame_header[0..2]).unwrap();
-            masking_key = frame_header[2..].try_into().unwrap();
-
-        }
-        127 => {
-            frame_header = vec![0; 12];
-            buf_reader.read_exact(&mut frame_header).unwrap();
-            payload_len = websocket_content_len(&frame_header[0..8]).unwrap();
-            masking_key = frame_header[8..].try_into().unwrap();
-        }
-        128..=u64::MAX => {
-            // impossible? 
-        }
-    }
-
-    info!("full payload len: {}", payload_len);
-    info!("masking key: {:02X?}", masking_key);
-
-    let mut rec_msg = vec![0; payload_len as usize];
-    buf_reader.read_exact(&mut rec_msg).unwrap();
-
-    
-    let decoded: Vec<u8> = rec_msg
-        .iter()
-        .enumerate()
-        .map(|(index, el)| el^masking_key[index%4] )
-        .collect();
-    
-    
-    return Ok(decoded);
-
-}
-
-fn websocket_content_len(data: &[u8]) -> Result<u64, &str>{
-    let num_shifts = data.len();
-    match num_shifts {
-        0..=8 => {
-            Ok(data.iter()
-                .rev()
-                .enumerate()
-                .map(|(idx, el)| (*el as u64) << 8*(idx))
-                .fold(0,|acc, x| acc | x )
-        )
-        },
-        _ => Err("array too long.")
-    }
-    // if num_shifts
-    // 
-}
-
-pub fn websocket_handshake(req: &HttpRequest) -> Result<String, &str>{
-    let headers = match req {
-        HttpRequest::Get { status_line: _, headers } => headers,
-        HttpRequest::Post { status_line: _, headers: _, body: _ } => return Err("Do not use post for this"),
-    };
-    
-    let status_line = "HTTP/1.1 101 Switching Protocols";
-    info!("Response Status {}",status_line);
-    
-    let sender_key = headers.get("Sec-WebSocket-Key").unwrap();
-    let encoded_data = web_socket_accept(sender_key);
-
-    let handshake = format!("{status_line}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {encoded_data}\r\n\r\n");
-    log::info!("Handshake:\n{}", handshake);
-
-    return Ok(handshake)
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn web_socket_accept_header() {
-        let actual = crate::web_socket_accept("dGhlIHNhbXBsZSBub25jZQ==");
-        assert_eq!(actual, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
     }
 
 }
