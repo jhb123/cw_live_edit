@@ -55,14 +55,34 @@ class CrosswordGrid extends HTMLElement {
                     } else {
                         this.activeClue.highlight()
                         // console.log(key)
-                        if (key.key === "Backspace"){
-                            this.activeClue.getActiveCell().updateText("")
-                            let cell = this.activeClue.backwardCellIterator.next().value
-                            this.activeClue.setActiveCell(cell)
-                        } else {
-                            this.activeClue.getActiveCell().updateText(key.key)
-                            let cell = this.activeClue.forwardCellIterator.next().value
-                            this.activeClue.setActiveCell(cell)
+                        let cell;
+                        switch(key.key) {
+                            case "Backspace":
+                                this.activeClue.getActiveCell().updateText("");
+                                cell = this.activeClue.backwardCellIterator.next().value;
+                                this.activeClue.setActiveCell(cell);
+                                break;
+                            case "ArrowRight":
+                            case 'ArrowDown':
+                                cell = this.activeClue.forwardCellIterator.next().value;
+                                this.activeClue.setActiveCell(cell);
+                                break;
+                            case "ArrowLeft":
+                            case 'ArrowUp':
+                                cell = this.activeClue.backwardCellIterator.next().value;
+                                this.activeClue.setActiveCell(cell);
+                                break;
+                            default:
+                                if (/^[a-zA-Z]$/.test(key.key)) {
+                                    this.activeClue.getActiveCell().updateText(key.key);
+                                    cell = this.activeClue.forwardCellIterator.next().value;
+                                    this.activeClue.setActiveCell(cell);
+                                }
+                                else {
+                                    cell = this.activeClue.getActiveCell()
+                                    this.activeClue.setActiveCell(cell);
+
+                                }
                         }
                     }
                 })
