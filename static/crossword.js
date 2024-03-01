@@ -30,6 +30,21 @@ class CrosswordGrid extends HTMLElement {
         this.scale = 30
         this.cells = new Map();
         this.activeClue = null;
+        
+        let loc = window.location.host + "/puzzle/1"
+
+        this.ws = new WebSocket("ws://" + loc)
+ 
+        // Connection opened
+        this.ws.addEventListener("open", (event) => {
+          this.ws.send("Hello Server!");
+        });
+        
+        // Listen for messages
+        this.ws.addEventListener("message", (event) => {
+            let message = JSON.parse(event.data);
+            console.log("Message from server ",message);            
+        });
 
         this.fetchData().then(() => {
         });
@@ -58,6 +73,7 @@ class CrosswordGrid extends HTMLElement {
                         let cell;
                         switch(key.key) {
                             case "Backspace":
+                                this.ws.send("");
                                 this.activeClue.getActiveCell().updateText("");
                                 cell = this.activeClue.backwardCellIterator.next().value;
                                 this.activeClue.setActiveCell(cell);
@@ -75,6 +91,7 @@ class CrosswordGrid extends HTMLElement {
                             default:
                                 if (/^[a-zA-Z]$/.test(key.key)) {
                                     this.activeClue.getActiveCell().updateText(key.key);
+                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
                                     cell = this.activeClue.forwardCellIterator.next().value;
                                     this.activeClue.setActiveCell(cell);
                                 }
@@ -115,7 +132,7 @@ class CrosswordGrid extends HTMLElement {
 
         for (let incomingCellData in incomingClueData.cells) {
             let cellData = incomingClueData.cells[incomingCellData];
-            let key = cellData.join(',');
+            let key = `${cellData.x},${cellData.y}`;
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
@@ -149,11 +166,11 @@ class CrosswordGrid extends HTMLElement {
     }
 
     expandBackgroundElement(cellData) {
-        if ((cellData[0] + 1) * this.scale > this.grid.clientWidth) {
-            this.grid.style.width = (cellData[0] + 1) * this.scale + "px";
+        if ((cellData.x + 1) * this.scale > this.grid.clientWidth) {
+            this.grid.style.width = (cellData.x + 1) * this.scale + "px";
         }
-        if ((cellData[1] + 1) * this.scale > this.grid.clientHeight) {
-            this.grid.style.height = (cellData[1] + 1) * this.scale + "px";
+        if ((cellData.y + 1) * this.scale > this.grid.clientHeight) {
+            this.grid.style.height = (cellData.y + 1) * this.scale + "px";
         }
     }
 
@@ -164,8 +181,8 @@ class Cell {
         console.log("creating cell")
         let div = document.createElement('div');
         div.style.position = 'absolute';
-        div.style.top = cellData[1] * scale + 'px';
-        div.style.left = cellData[0] * scale + 'px';
+        div.style.top = cellData.x * scale + 'px';
+        div.style.left = cellData.y * scale + 'px';
         div.style.width = scale + 'px';
         div.style.height = scale + 'px';
         div.style.background = "#ffffffff";
@@ -180,9 +197,13 @@ class Cell {
         this.clueIterator = this.cycleClue()
         this.coords = cellData
 
-        this.updateText(cellData[2])
+        this.updateText(cellData.c)
 
 
+    }
+
+    getCellData(){
+        return JSON.stringify({x: this.coords.x, y: this.coords.y, c: this.text })
     }
 
     handleClick() {
