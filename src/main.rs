@@ -1,11 +1,11 @@
 use cw_grid_server::{
-    crossword::Crossword, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{self, Crossword}, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{info, warn};
 use regex::Regex;
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
+    borrow::Borrow, collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
     }, thread::{self, sleep}, time::Duration
@@ -38,6 +38,9 @@ fn main() {
     routes.insert(r"^/testCrossword$", crossword_page);
 
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
+    routes.insert(r"^/puzzle/\d+/data$", puzzle_handler_data);
+    routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
+
 
     routes.insert(r"^/dbTest/\d+$", db_test_handler);
 
@@ -183,7 +186,8 @@ fn test_crossword(_req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
 fn crossword_page(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
-    let context = tera::Context::new();
+    let mut context = tera::Context::new();
+    context.insert("src", "/puzzle/1");
     let contents = tera.render("crossword.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
@@ -212,13 +216,45 @@ fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, mut stream: TcpStream) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn puzzle_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+
+fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
         HttpRequest::Post { status_line, .. } => status_line,
     };
 
     let path_info = Regex::new(r"(?<num>\d+)").unwrap();
+    let caps = path_info.captures(&status_line.route).unwrap();
+    let puzzle_num = caps["num"].to_string();
+
+    PUZZLEPOOL.lock().unwrap().get_grid_page(puzzle_num, tera , stream);
+
+}
+
+fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => status_line,
+        HttpRequest::Post { status_line, .. } => status_line,
+    };
+
+    let path_info = Regex::new(r"(?<num>\d+/data)").unwrap();
+    let caps = path_info.captures(&status_line.route).unwrap();
+    let puzzle_num = caps["num"].to_string();
+
+    PUZZLEPOOL.lock().unwrap().get_grid_data(puzzle_num , stream);
+
+    //
+    
+
+}
+
+fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => status_line,
+        HttpRequest::Post { status_line, .. } => status_line,
+    };
+
+    let path_info = Regex::new(r"(?<num>\d+/live)").unwrap();
     let caps = path_info.captures(&status_line.route).unwrap();
     let puzzle_num = caps["num"].to_string();
 
@@ -284,6 +320,44 @@ impl PuzzlePool {
             }
         }
     }
+
+    fn get_grid_page(&mut self, puzzle_num: String, tera: Arc<Tera>, mut stream: TcpStream) {
+        match self.pool.get(&puzzle_num) {
+            Some(puzzle_channel) => {
+                // get crossword from channel
+                puzzle_channel.lock().unwrap().send_puzzle(stream)
+            }
+            None => {
+                // get relevant crossword from storage
+                let status_line = "HTTP/1.1 200 Ok";
+                info!("Response Status {}", status_line);
+                let mut context = tera::Context::new();
+                context.insert("src", &format!("/puzzle/{puzzle_num}"));
+                let contents = tera.render("crossword.html", &context).unwrap();
+                let length = contents.len();
+                let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        }
+    }
+
+    fn get_grid_data(&mut self, puzzle_num: String, mut stream: TcpStream) {
+        match self.pool.get(&puzzle_num) {
+            Some(puzzle_channel) => {
+                // get crossword from channel
+                puzzle_channel.lock().unwrap().send_puzzle(stream)
+            }
+            None => {
+                let status_line = "HTTP/1.1 200 Ok";
+                info!("Response Status {}", status_line);
+                let grid = Crossword::demo_grid();
+                let contents = serde_json::to_string(&grid).unwrap();
+                let length = contents.len();
+                let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+                stream.write_all(response.as_bytes());
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -291,6 +365,7 @@ struct PuzzleChannel {
     sender: Arc<mpsc::Sender<Vec<u8>>>,
     clients: Arc<Mutex<Vec<mpsc::Sender<Vec<u8>>>>>,
     running: bool,
+    crossword: Mutex<Crossword>
 }
 
 impl PuzzleChannel {
@@ -300,6 +375,9 @@ impl PuzzleChannel {
         let running = true;
         let clients = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
+
+        let crossword = Mutex::new(Crossword::demo_grid());
+
 
         THREADPOOL.execute(move || {
             while running {
@@ -325,6 +403,7 @@ impl PuzzleChannel {
             sender: Arc::new(sender),
             clients,
             running,
+            crossword
         }
     }
 
@@ -332,6 +411,20 @@ impl PuzzleChannel {
         info!("adding new client to senders");
         self.clients.lock().unwrap().push(sender)
     }
+
+
+    fn send_puzzle(&self, mut stream: TcpStream) {
+        let status_line = "HTTP/1.1 200 Ok";
+        info!("Response Status {}", status_line);
+        let grid = self.crossword.lock().unwrap();
+        let contents = serde_json::to_string(&*grid).unwrap();
+        let length = contents.len();
+        let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+        stream.write_all(response.as_bytes());
+    }
+
+
+
 }
 
 impl Drop for PuzzleChannel {
@@ -342,7 +435,8 @@ impl Drop for PuzzleChannel {
 }
 
 
-fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: TcpStream) {
+fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, mut stream: TcpStream) {
+
     let _ = stream.set_read_timeout(Some(Duration::from_millis(10)));
 
     let stream = Arc::new(Mutex::new(stream));
