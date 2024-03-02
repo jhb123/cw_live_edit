@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{self, Crossword}, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{self, Cell, Crossword}, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{info, warn};
@@ -218,6 +218,7 @@ fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, mut stream: TcpStream) {
 
 
 fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+    /// acquire the html of the page.
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
         HttpRequest::Post { status_line, .. } => status_line,
@@ -232,12 +233,15 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
 }
 
 fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+    /// Acquire the entire puzzle json. For configuring the crossword grid element in 
+    /// the corresponding page.
+
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
         HttpRequest::Post { status_line, .. } => status_line,
     };
 
-    let path_info = Regex::new(r"(?<num>\d+/data)").unwrap();
+    let path_info = Regex::new(r"(?<num>\d+)/data").unwrap();
     let caps = path_info.captures(&status_line.route).unwrap();
     let puzzle_num = caps["num"].to_string();
 
@@ -249,12 +253,14 @@ fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStrea
 }
 
 fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+    /// Establish a websocket connection to the puzzle
+
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
         HttpRequest::Post { status_line, .. } => status_line,
     };
 
-    let path_info = Regex::new(r"(?<num>\d+/live)").unwrap();
+    let path_info = Regex::new(r"(?<num>\d+)/live").unwrap();
     let caps = path_info.captures(&status_line.route).unwrap();
     let puzzle_num = caps["num"].to_string();
 
@@ -322,12 +328,12 @@ impl PuzzlePool {
     }
 
     fn get_grid_page(&mut self, puzzle_num: String, tera: Arc<Tera>, mut stream: TcpStream) {
-        match self.pool.get(&puzzle_num) {
-            Some(puzzle_channel) => {
-                // get crossword from channel
-                puzzle_channel.lock().unwrap().send_puzzle(stream)
-            }
-            None => {
+        // match self.pool.get(&puzzle_num) {
+        //     Some(puzzle_channel) => {
+        //         // get crossword from channel
+        //         puzzle_channel.lock().unwrap().send_puzzle_page(stream)
+        //     }
+        //     None => {
                 // get relevant crossword from storage
                 let status_line = "HTTP/1.1 200 Ok";
                 info!("Response Status {}", status_line);
@@ -337,17 +343,22 @@ impl PuzzlePool {
                 let length = contents.len();
                 let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
                 stream.write_all(response.as_bytes()).unwrap();
-            }
-        }
+            // }
+        // }
     }
 
     fn get_grid_data(&mut self, puzzle_num: String, mut stream: TcpStream) {
+        self.pool.iter().for_each(|(name,_)|{
+            info!("channel {}",name)
+        });
         match self.pool.get(&puzzle_num) {
             Some(puzzle_channel) => {
                 // get crossword from channel
+                info!("Puzzle already exists in memory");
                 puzzle_channel.lock().unwrap().send_puzzle(stream)
             }
             None => {
+                info!("Puzzle doesn't exist in memory. Loading from disk");
                 let status_line = "HTTP/1.1 200 Ok";
                 info!("Response Status {}", status_line);
                 let grid = Crossword::demo_grid();
@@ -365,7 +376,7 @@ struct PuzzleChannel {
     sender: Arc<mpsc::Sender<Vec<u8>>>,
     clients: Arc<Mutex<Vec<mpsc::Sender<Vec<u8>>>>>,
     running: bool,
-    crossword: Mutex<Crossword>
+    crossword: Arc<Mutex<Crossword>>
 }
 
 impl PuzzleChannel {
@@ -376,8 +387,8 @@ impl PuzzleChannel {
         let clients = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
 
-        let crossword = Mutex::new(Crossword::demo_grid());
-
+        let crossword = Arc::new(Mutex::new(Crossword::demo_grid()));
+        let crossword_clone = crossword.clone();
 
         THREADPOOL.execute(move || {
             while running {
@@ -387,6 +398,23 @@ impl PuzzleChannel {
                     // who cares, this is just debugging
                     info!("{}", String::from_utf8_unchecked(msg_clone.to_vec()));
                 }
+                
+                match String::from_utf8(msg.to_vec()) {
+                    Ok(client_data) => {
+                        let incoming_data: Result<Cell, serde_json::Error>  = serde_json::from_str(&client_data);
+                        match incoming_data {
+                            Ok(deserialised) => {
+                                crossword_clone.lock().unwrap().update_cell(deserialised);
+                            },
+                            Err(_) => {
+                                warn!("cannot deserialise")
+                            },
+                        }
+                        
+                    },
+                    Err(e) => info!("{}", e),
+                }
+
                 let msg_clone = msg.clone();
 
                 clients_clone
@@ -423,6 +451,9 @@ impl PuzzleChannel {
         stream.write_all(response.as_bytes());
     }
 
+    fn send_puzzle_page(){
+        todo!()
+    }
 
 
 }

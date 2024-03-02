@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashSet,HashMap};
 
+use log::info;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -11,7 +12,7 @@ pub enum Direction {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Crossword {
     across: HashMap<String, Clue>,
-    down: HashMap<String, Clue>
+    down: HashMap<String, Clue>,
 }
 
 impl Crossword {
@@ -36,6 +37,25 @@ impl Crossword {
 
         Self{across, down}
 
+    }
+
+    pub fn update_cell(&mut self, incoming_cell: Cell) {
+        self.across.iter_mut().for_each(|(_, clue)| {
+            clue.cells.iter_mut()
+            .find( |cell| cell.x == incoming_cell.x && cell.y == incoming_cell.y)
+            .and_then(|cell | {
+                info!("updating across clue cell");
+                Some(cell.c = incoming_cell.c)
+            });
+        });
+        self.down.iter_mut().for_each(|(_, clue)| {
+            clue.cells.iter_mut()
+            .find( |cell| cell.x == incoming_cell.x && cell.y == incoming_cell.y)
+            .and_then(|cell | {
+                info!("updating down clue cell");
+                Some(cell.c = incoming_cell.c)
+            });
+        });
     }
 
 }
