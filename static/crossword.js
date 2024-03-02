@@ -43,6 +43,7 @@ class CrosswordGrid extends HTMLElement {
         // Listen for messages
         this.ws.addEventListener("message", (event) => {
             let message = JSON.parse(event.data);
+            this.handleUpdateTextFromServer(message)
             console.log("Message from server ",message);            
         });
 
@@ -73,8 +74,8 @@ class CrosswordGrid extends HTMLElement {
                         let cell;
                         switch(key.key) {
                             case "Backspace":
-                                this.ws.send("");
-                                this.activeClue.getActiveCell().updateText("");
+                                this.activeClue.getActiveCell().updateText(" ");
+                                this.ws.send(this.activeClue.getActiveCell().getCellData())
                                 cell = this.activeClue.backwardCellIterator.next().value;
                                 this.activeClue.setActiveCell(cell);
                                 break;
@@ -124,6 +125,20 @@ class CrosswordGrid extends HTMLElement {
 
     }
 
+    handleUpdateTextFromServer(new_cell) {
+        console.log(new_cell)
+        let key = `${new_cell.x},${new_cell.y}`
+        console.log(key)
+        // let frobnicate = new Cell(new_cell, this.scale)
+        let cell = this.cells.get(key)
+        cell.text = new_cell.c
+        cell.updateText(new_cell.c)
+        // this.cells.set(key, frobnicate)
+        console.log(this.cells)
+
+        // this.grid.replaceChild(frobnicate.div, old_div.div)
+    }
+
     handleIncomingClue(incomingClueName, clueDirection, incomingClueData) {
         let hintEl = this.createHintElement(incomingClueName, incomingClueData);
         clueDirection.appendChild(hintEl);
@@ -138,7 +153,7 @@ class CrosswordGrid extends HTMLElement {
                 cell.div.addEventListener('click', () => {
                     var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
-                        node.style.background = "#ffffffff";
+                        node.style.background = "#ffffff66";
                     });
                     this.activeClue = cell.handleClick();
                     this.activeClue.setActiveCell(cell)
@@ -185,7 +200,7 @@ class Cell {
         div.style.left = cellData.y * scale + 'px';
         div.style.width = scale + 'px';
         div.style.height = scale + 'px';
-        div.style.background = "#ffffffff";
+        div.style.background = "#ffffff66";
         div.style.boxSizing = "border-box";
         div.style.border = '1px solid black';
         div.style.textAlign = "center"
