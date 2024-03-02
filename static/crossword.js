@@ -30,6 +30,22 @@ class CrosswordGrid extends HTMLElement {
         this.scale = 30
         this.cells = new Map();
         this.activeClue = null;
+        
+        let loc = window.location.host + "/puzzle/1"
+
+        this.ws = new WebSocket("ws://" + loc)
+ 
+        // Connection opened
+        this.ws.addEventListener("open", (event) => {
+          this.ws.send("Hello Server!");
+        });
+        
+        // Listen for messages
+        this.ws.addEventListener("message", (event) => {
+            let message = JSON.parse(event.data);
+            this.handleUpdateTextFromServer(message)
+            console.log("Message from server ",message);            
+        });
 
         this.fetchData().then(() => {
         });
@@ -55,14 +71,36 @@ class CrosswordGrid extends HTMLElement {
                     } else {
                         this.activeClue.highlight()
                         // console.log(key)
-                        if (key.key === "Backspace"){
-                            this.activeClue.getActiveCell().updateText("")
-                            let cell = this.activeClue.backwardCellIterator.next().value
-                            this.activeClue.setActiveCell(cell)
-                        } else {
-                            this.activeClue.getActiveCell().updateText(key.key)
-                            let cell = this.activeClue.forwardCellIterator.next().value
-                            this.activeClue.setActiveCell(cell)
+                        let cell;
+                        switch(key.key) {
+                            case "Backspace":
+                                this.activeClue.getActiveCell().updateText(" ");
+                                this.ws.send(this.activeClue.getActiveCell().getCellData())
+                                cell = this.activeClue.backwardCellIterator.next().value;
+                                this.activeClue.setActiveCell(cell);
+                                break;
+                            case "ArrowRight":
+                            case 'ArrowDown':
+                                cell = this.activeClue.forwardCellIterator.next().value;
+                                this.activeClue.setActiveCell(cell);
+                                break;
+                            case "ArrowLeft":
+                            case 'ArrowUp':
+                                cell = this.activeClue.backwardCellIterator.next().value;
+                                this.activeClue.setActiveCell(cell);
+                                break;
+                            default:
+                                if (/^[a-zA-Z]$/.test(key.key)) {
+                                    this.activeClue.getActiveCell().updateText(key.key);
+                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
+                                    cell = this.activeClue.forwardCellIterator.next().value;
+                                    this.activeClue.setActiveCell(cell);
+                                }
+                                else {
+                                    cell = this.activeClue.getActiveCell()
+                                    this.activeClue.setActiveCell(cell);
+
+                                }
                         }
                     }
                 })
@@ -87,6 +125,20 @@ class CrosswordGrid extends HTMLElement {
 
     }
 
+    handleUpdateTextFromServer(new_cell) {
+        console.log(new_cell)
+        let key = `${new_cell.x},${new_cell.y}`
+        console.log(key)
+        // let frobnicate = new Cell(new_cell, this.scale)
+        let cell = this.cells.get(key)
+        cell.text = new_cell.c
+        cell.updateText(new_cell.c)
+        // this.cells.set(key, frobnicate)
+        console.log(this.cells)
+
+        // this.grid.replaceChild(frobnicate.div, old_div.div)
+    }
+
     handleIncomingClue(incomingClueName, clueDirection, incomingClueData) {
         let hintEl = this.createHintElement(incomingClueName, incomingClueData);
         clueDirection.appendChild(hintEl);
@@ -95,13 +147,13 @@ class CrosswordGrid extends HTMLElement {
 
         for (let incomingCellData in incomingClueData.cells) {
             let cellData = incomingClueData.cells[incomingCellData];
-            let key = cellData.join(',');
+            let key = `${cellData.x},${cellData.y}`;
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
                     var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
-                        node.style.background = "#ffffffff";
+                        node.style.background = "#ffffff66";
                     });
                     this.activeClue = cell.handleClick();
                     this.activeClue.setActiveCell(cell)
@@ -129,11 +181,11 @@ class CrosswordGrid extends HTMLElement {
     }
 
     expandBackgroundElement(cellData) {
-        if ((cellData[0] + 1) * this.scale > this.grid.clientWidth) {
-            this.grid.style.width = (cellData[0] + 1) * this.scale + "px";
+        if ((cellData.x + 1) * this.scale > this.grid.clientWidth) {
+            this.grid.style.width = (cellData.x + 1) * this.scale + "px";
         }
-        if ((cellData[1] + 1) * this.scale > this.grid.clientHeight) {
-            this.grid.style.height = (cellData[1] + 1) * this.scale + "px";
+        if ((cellData.y + 1) * this.scale > this.grid.clientHeight) {
+            this.grid.style.height = (cellData.y + 1) * this.scale + "px";
         }
     }
 
@@ -144,11 +196,11 @@ class Cell {
         console.log("creating cell")
         let div = document.createElement('div');
         div.style.position = 'absolute';
-        div.style.top = cellData[1] * scale + 'px';
-        div.style.left = cellData[0] * scale + 'px';
+        div.style.top = cellData.x * scale + 'px';
+        div.style.left = cellData.y * scale + 'px';
         div.style.width = scale + 'px';
         div.style.height = scale + 'px';
-        div.style.background = "#ffffffff";
+        div.style.background = "#ffffff66";
         div.style.boxSizing = "border-box";
         div.style.border = '1px solid black';
         div.style.textAlign = "center"
@@ -160,9 +212,13 @@ class Cell {
         this.clueIterator = this.cycleClue()
         this.coords = cellData
 
-        this.updateText(cellData[2])
+        this.updateText(cellData.c)
 
 
+    }
+
+    getCellData(){
+        return JSON.stringify({x: this.coords.x, y: this.coords.y, c: this.text })
     }
 
     handleClick() {
