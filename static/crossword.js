@@ -199,8 +199,8 @@ class Cell {
         console.log("creating cell")
         let div = document.createElement('div');
         div.style.position = 'absolute';
-        div.style.top = cellData.x * scale + 'px';
-        div.style.left = cellData.y * scale + 'px';
+        div.style.left = cellData.x * scale + 'px';
+        div.style.top = cellData.y * scale + 'px';
         div.style.width = scale + 'px';
         div.style.height = scale + 'px';
         div.style.background = "#ffffff66";
