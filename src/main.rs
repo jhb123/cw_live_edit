@@ -228,7 +228,16 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let caps = path_info.captures(&status_line.route).unwrap();
     let puzzle_num = caps["num"].to_string();
 
-    get_grid_page(puzzle_num, tera , stream);
+    // get_grid_page(puzzle_num, tera , stream);
+
+    let response_status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}", response_status_line);
+    let mut context = tera::Context::new();
+    context.insert("src", &format!("/puzzle/{puzzle_num}"));
+    let contents = tera.render("crossword.html", &context).unwrap();
+    let length = contents.len();
+    let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+    stream.write_all(response.as_bytes()).unwrap();
 
 }
 
@@ -299,16 +308,6 @@ fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
 
 }
 
-fn get_grid_page(puzzle_num: String, tera: Arc<Tera>, mut stream: TcpStream) {
-    let status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", status_line);
-    let mut context = tera::Context::new();
-    context.insert("src", &format!("/puzzle/{puzzle_num}"));
-    let contents = tera.render("crossword.html", &context).unwrap();
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-}
 
 #[derive(Debug)]
 struct PuzzlePool {
