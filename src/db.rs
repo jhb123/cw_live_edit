@@ -1,6 +1,8 @@
 use std::{env, fs::{self, DirEntry, File}, io::{Error, Read, Write}, path::Path};
 use log::{error, info};
 
+use crate::crossword::Crossword;
+
 
 
 pub fn init_db() -> Result<(),Error> {
@@ -29,15 +31,18 @@ pub fn get_all_puzzles() -> Result<Vec<DirEntry>,Error>  {
 
 }
 
-pub fn get_puzzle(id: &str) -> Result<File, Error> {
+pub fn get_puzzle(id: &str) -> Result<Crossword, Error> {
     let p = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
 
     let path = Path::new(&p);
 
-    let puzzle_path = path.join(id);
+    let puzzle_path = path.join(format!("{id}.json"));
 
-    let file = File::open(puzzle_path)?;
-    Ok(file)
+    let mut file = File::open(puzzle_path)?;
+    let mut data = String::new();
+    file.read_to_string(&mut data)?;
+    let crossword: Crossword = serde_json::from_str(&data).unwrap();
+    Ok(crossword)
 }
 
 

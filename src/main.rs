@@ -43,7 +43,7 @@ fn main() {
     routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
 
 
-    routes.insert(r"^/dbTest/\d+$", db_test_handler);
+    // routes.insert(r"^/dbTest/\d+$", db_test_handler);
 
 
     let tera = Tera::new("templates/**/*").unwrap();
@@ -278,30 +278,30 @@ fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStrea
     PUZZLEPOOL.lock().unwrap().connect_client(puzzle_num, stream);
 }
 
-fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
-    let response_status_line = "HTTP/1.1 200 Ok";
+// fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+//     let response_status_line = "HTTP/1.1 200 Ok";
 
-    let status_line = match req {
-        HttpRequest::Get { status_line, .. } => status_line,
-        HttpRequest::Post { status_line, .. } => status_line,
-    };
+//     let status_line = match req {
+//         HttpRequest::Get { status_line, .. } => status_line,
+//         HttpRequest::Post { status_line, .. } => status_line,
+//     };
 
-    let path_info = Regex::new(r"(?<num>\d+)").unwrap();
-    let caps = path_info.captures(&status_line.route).unwrap();
-    let puzzle_num = caps["num"].to_string();
+//     let path_info = Regex::new(r"(?<num>\d+)").unwrap();
+//     let caps = path_info.captures(&status_line.route).unwrap();
+//     let puzzle_num = caps["num"].to_string();
     
 
-    if let Ok(mut file) = get_puzzle(&format!("{puzzle_num}.json")) {
-        let mut contents = String::new();
-        let length = file.read_to_string(&mut contents).unwrap();
+//     if let Ok(mut file) = get_puzzle(&format!("{puzzle_num}.json")) {
+//         let mut contents = String::new();
+//         let length = file.read_to_string(&mut contents).unwrap();
     
-        let response = format!("{response_status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
-        stream.write_all(response.as_bytes()).unwrap();
-    } else {
-        missing(tera, stream)
-    }
+//         let response = format!("{response_status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
+//         stream.write_all(response.as_bytes()).unwrap();
+//     } else {
+//         missing(tera, stream)
+//     }
 
-}
+// }
 
 
 #[derive(Debug)]
@@ -381,7 +381,8 @@ impl PuzzleChannel {
         let clients: ThreadSafeSenderVector = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
 
-        let crossword = Arc::new(Mutex::new(Crossword::demo_grid()));
+        let crossword = Arc::new(Mutex::new(get_puzzle(&puzzle_num).unwrap()));
+
         let crossword_clone = crossword.clone();
 
         THREADPOOL.execute(move || {
