@@ -323,14 +323,12 @@ impl PuzzlePool {
             }
             None => {
                 info!("No channel found to route websocket client. Creating a new channel");
-                let new_channel = Arc::new(Mutex::new(PuzzleChannel::new()));
+                let new_channel = Arc::new(Mutex::new(PuzzleChannel::new(puzzle_num.clone())));
                 self.pool.insert(puzzle_num, new_channel.clone());
                 route_stream_to_puzzle(new_channel.clone(), stream);
             }
         }
     }
-
-
 
     fn get_grid_data(&mut self, puzzle_num: String, mut stream: TcpStream) {
         self.pool.iter().for_each(|(name,_)|{
@@ -354,6 +352,10 @@ impl PuzzlePool {
             }
         }
     }
+
+    fn remove_channel(&mut self, puzzle_num: &str) {
+        self.pool.remove(puzzle_num);
+    }
 }
 
 type ThreadSafeSenderVector = Arc<Mutex<Vec<Arc<mpsc::Sender<Vec<u8>>>>>>;
@@ -362,15 +364,16 @@ type ThreadSafeSenderVector = Arc<Mutex<Vec<Arc<mpsc::Sender<Vec<u8>>>>>>;
 struct PuzzleChannel {
     channel_wide_sender: Arc<mpsc::Sender<Vec<u8>>>,
     clients: ThreadSafeSenderVector,
-    running: bool,
-    crossword: Arc<Mutex<Crossword>>
+    terminate_sender: mpsc::Sender<bool>,
+    crossword: Arc<Mutex<Crossword>>,
 }
 
 impl PuzzleChannel {
-    fn new() -> Self {
+    fn new(puzzle_num: String) -> Self {
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
 
-        let running = true;
+        let (terminate_sender, terminate_rec) = mpsc::channel();
+
         let clients: ThreadSafeSenderVector = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
 
@@ -378,7 +381,17 @@ impl PuzzleChannel {
         let crossword_clone = crossword.clone();
 
         THREADPOOL.execute(move || {
-            while running {
+            loop {
+                if let Ok(should_break) = terminate_rec.recv_timeout(Duration::from_millis(10)){
+                    if should_break {
+                        info!("Puzzle channel received termination signal");
+                        break
+                    }
+                    else {
+                        info!("Puzzle channel received continuation signal");
+                    }
+                }
+
                 let msg = Arc::new(receiver.recv().unwrap());
                 unsafe {
                     let msg_clone = msg.clone();
@@ -411,14 +424,16 @@ impl PuzzleChannel {
                     .filter_map(|x| x.send(msg_clone.to_vec()).err())
                     .for_each(drop);
             }
-            info!("finishing")
+            info!("finishing");
+            PUZZLEPOOL.lock().unwrap().remove_channel(&puzzle_num);
+
         });
 
         Self {
             channel_wide_sender: Arc::new(sender),
             clients,
-            running,
-            crossword
+            terminate_sender,
+            crossword,
         }
     }
 
@@ -434,7 +449,11 @@ impl PuzzleChannel {
             info!("found client, removing")
         }
 
-        info!("number of remaining clients: {}",clients.len())
+        info!("number of remaining clients: {}",clients.len());
+        if clients.len() == 0 {
+            info!("terminating channel");
+            self.terminate_sender.send(true);
+        }
 
     }
 
@@ -458,8 +477,7 @@ impl PuzzleChannel {
 
 impl Drop for PuzzleChannel {
     fn drop(&mut self) {
-        self.running = false;
-        info!("finished")
+        info!("dropping puzzle channel")
     }
 }
 
