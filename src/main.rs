@@ -2,7 +2,7 @@ use cw_grid_server::{
     crossword::{self, Cell, Crossword}, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
-use log::{info, warn};
+use log::{debug, info, warn};
 use regex::Regex;
 use std::{
     borrow::Borrow, collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
@@ -106,7 +106,7 @@ impl Api {
                 // Regex::new()
                 for (api_route, handler) in self.routes.iter() {
                     let reg = Regex::new(api_route).unwrap();
-                    info!("regex:{}", reg);
+                    debug!("regex:{}", reg);
                     if reg.is_match(incoming_route) {
                         info!("Routing {incoming_route} to {api_route}");
                         return handler(req, Arc::clone(&self.tera), stream);
@@ -262,7 +262,6 @@ fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStrea
 }
 
 fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
-    /// Establish a websocket connection to the puzzle
 
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
@@ -274,10 +273,7 @@ fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStrea
     let puzzle_num = caps["num"].to_string();
 
     let handshake = websocket_handshake(req).unwrap();
-
     stream.write_all(handshake.as_bytes()).unwrap();
-    let frame = websocket_message("Hello from rust!");
-    stream.write_all(&frame).unwrap();
 
     // pass info into the puzzle pool so that this request can be routed to the correct puzzle channel
     PUZZLEPOOL.lock().unwrap().connect_client(puzzle_num, stream);
@@ -324,13 +320,14 @@ impl PuzzlePool {
 
         match self.pool.get(&puzzle_num) {
             Some(puzzle_channel) => {
-                info!("existing puzzle found, routing to it.");
+                info!("Connecting websocket client to existing puzzle.");
                 route_stream_to_puzzle(puzzle_channel.clone(), stream)
             }
             None => {
+                info!("No channel found to route websocket client. Creating a new channel");
                 let new_channel = Arc::new(Mutex::new(PuzzleChannel::new()));
-                route_stream_to_puzzle(new_channel.clone(), stream);
                 self.pool.insert(puzzle_num, new_channel.clone());
+                route_stream_to_puzzle(new_channel.clone(), stream);
             }
         }
     }
@@ -344,11 +341,11 @@ impl PuzzlePool {
         match self.pool.get(&puzzle_num) {
             Some(puzzle_channel) => {
                 // get crossword from channel
-                info!("Puzzle already exists in memory");
+                info!("Puzzle channel found. Sending puzzle channel data.");
                 puzzle_channel.lock().unwrap().send_puzzle(stream)
             }
             None => {
-                info!("Puzzle doesn't exist in memory. Loading from disk");
+                info!("Puzzle channel not found. Loading data from disk");
                 let status_line = "HTTP/1.1 200 Ok";
                 info!("Response Status {}", status_line);
                 let grid = Crossword::demo_grid();
@@ -363,7 +360,7 @@ impl PuzzlePool {
 
 #[derive(Debug)]
 struct PuzzleChannel {
-    sender: Arc<mpsc::Sender<Vec<u8>>>,
+    channel_wide_sender: Arc<mpsc::Sender<Vec<u8>>>,
     clients: Arc<Mutex<Vec<mpsc::Sender<Vec<u8>>>>>,
     running: bool,
     crossword: Arc<Mutex<Crossword>>
@@ -418,7 +415,7 @@ impl PuzzleChannel {
         });
 
         Self {
-            sender: Arc::new(sender),
+            channel_wide_sender: Arc::new(sender),
             clients,
             running,
             crossword
@@ -456,7 +453,7 @@ impl Drop for PuzzleChannel {
 }
 
 
-fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, mut stream: TcpStream) {
+fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: TcpStream) {
 
     let _ = stream.set_read_timeout(Some(Duration::from_millis(10)));
 
@@ -501,7 +498,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, mut stream:
                 let mut buf_reader = BufReader::new(&mut *st);
                 let _ = match decode_client_frame(&mut buf_reader) {
                     Ok(msg) => {
-                        let sender = puzzle_channel.lock().unwrap().sender.clone();
+                        let sender = puzzle_channel.lock().unwrap().channel_wide_sender.clone();
                         match msg.opcode {
                             OpCode::Continuation => todo!(),
                             OpCode::Ping => todo!(),
