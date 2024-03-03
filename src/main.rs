@@ -228,7 +228,7 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let caps = path_info.captures(&status_line.route).unwrap();
     let puzzle_num = caps["num"].to_string();
 
-    PUZZLEPOOL.lock().unwrap().get_grid_page(puzzle_num, tera , stream);
+    get_grid_page(puzzle_num, tera , stream);
 
 }
 
@@ -299,7 +299,16 @@ fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
 
 }
 
-
+fn get_grid_page(puzzle_num: String, tera: Arc<Tera>, mut stream: TcpStream) {
+    let status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}", status_line);
+    let mut context = tera::Context::new();
+    context.insert("src", &format!("/puzzle/{puzzle_num}"));
+    let contents = tera.render("crossword.html", &context).unwrap();
+    let length = contents.len();
+    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+    stream.write_all(response.as_bytes()).unwrap();
+}
 
 #[derive(Debug)]
 struct PuzzlePool {
@@ -327,25 +336,7 @@ impl PuzzlePool {
         }
     }
 
-    fn get_grid_page(&mut self, puzzle_num: String, tera: Arc<Tera>, mut stream: TcpStream) {
-        // match self.pool.get(&puzzle_num) {
-        //     Some(puzzle_channel) => {
-        //         // get crossword from channel
-        //         puzzle_channel.lock().unwrap().send_puzzle_page(stream)
-        //     }
-        //     None => {
-                // get relevant crossword from storage
-                let status_line = "HTTP/1.1 200 Ok";
-                info!("Response Status {}", status_line);
-                let mut context = tera::Context::new();
-                context.insert("src", &format!("/puzzle/{puzzle_num}"));
-                let contents = tera.render("crossword.html", &context).unwrap();
-                let length = contents.len();
-                let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-                stream.write_all(response.as_bytes()).unwrap();
-            // }
-        // }
-    }
+
 
     fn get_grid_data(&mut self, puzzle_num: String, mut stream: TcpStream) {
         self.pool.iter().for_each(|(name,_)|{
