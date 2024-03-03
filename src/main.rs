@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use log::{debug, info, warn};
 use regex::Regex;
 use std::{
-    borrow::Borrow, collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
+    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
     }, thread::{self, sleep}, time::Duration
@@ -356,10 +356,12 @@ impl PuzzlePool {
     }
 }
 
+type ThreadSafeSenderVector = Arc<Mutex<Vec<Arc<mpsc::Sender<Vec<u8>>>>>>;
+
 #[derive(Debug)]
 struct PuzzleChannel {
     channel_wide_sender: Arc<mpsc::Sender<Vec<u8>>>,
-    clients: Arc<Mutex<Vec<mpsc::Sender<Vec<u8>>>>>,
+    clients: ThreadSafeSenderVector,
     running: bool,
     crossword: Arc<Mutex<Crossword>>
 }
@@ -369,7 +371,7 @@ impl PuzzleChannel {
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
 
         let running = true;
-        let clients = Arc::new(Mutex::new(vec![]));
+        let clients: ThreadSafeSenderVector = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
 
         let crossword = Arc::new(Mutex::new(Crossword::demo_grid()));
@@ -406,7 +408,7 @@ impl PuzzleChannel {
                     .lock()
                     .unwrap()
                     .iter()
-                    .filter_map(|x: &Sender<Vec<u8>>| x.send(msg_clone.to_vec()).err())
+                    .filter_map(|x| x.send(msg_clone.to_vec()).err())
                     .for_each(drop);
             }
             info!("finishing")
@@ -420,9 +422,20 @@ impl PuzzleChannel {
         }
     }
 
-    fn add_new_client(&mut self, sender: Sender<Vec<u8>>) {
+    fn add_new_client(&mut self, sender: Arc<Sender<Vec<u8>>>) {
         info!("adding new client to senders");
         self.clients.lock().unwrap().push(sender)
+    }
+
+    fn remove_client(&mut self, sender: &Arc<Sender<Vec<u8>>>) {
+        let mut clients = self.clients.lock().unwrap();
+        if let Some(idx) = clients.iter().position(|x| Arc::ptr_eq(x, sender)) {
+            clients.remove(idx);
+            info!("found client, removing")
+        }
+
+        info!("number of remaining clients: {}",clients.len())
+
     }
 
 
@@ -460,10 +473,14 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
 
     let (terminate_sender, terminate_rec) = mpsc::channel();
 
-
+    let sender = Arc::new(sender);
+    let sender_clone = sender.clone();
     {
         puzzle_channel.lock().unwrap().add_new_client(sender);
     }
+
+    let channel_wide_sender = puzzle_channel.lock().unwrap().channel_wide_sender.clone();
+    // let mut set = HashMap::new();
 
     let stream_clone = Arc::clone(&stream);
     let _rec_thread = thread::spawn( move || {
@@ -487,6 +504,8 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
             }
         }
         info!("finished writing data to client");
+        puzzle_channel.lock().unwrap().remove_client(&sender_clone);
+
     });
 
     let _send_thread = thread::spawn(move || {
@@ -496,21 +515,21 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
                 let mut buf_reader = BufReader::new(&mut *st);
                 let _ = match decode_client_frame(&mut buf_reader) {
                     Ok(msg) => {
-                        let sender = puzzle_channel.lock().unwrap().channel_wide_sender.clone();
+                        // put here!
                         match msg.opcode {
                             OpCode::Continuation => todo!(),
                             OpCode::Ping => todo!(),
                             OpCode::Pong => todo!(),
                             OpCode::Close => {
-                                sender.send(msg.body).unwrap();
+                                channel_wide_sender.send(msg.body).unwrap();
                                 let frame = close_websocket_message();
                                 st.write_all(&frame).unwrap();
                                 terminate_sender.send(true).unwrap();
                                 break
                             },
                             OpCode::Reserved => panic!("Cannot handle this opcode"),
-                            OpCode::Text => sender.send(msg.body),
-                            OpCode::Binary => sender.send(msg.body),
+                            OpCode::Text => channel_wide_sender.send(msg.body),
+                            OpCode::Binary => channel_wide_sender.send(msg.body),
                         }
                     },
                     Err(_err) => {
@@ -523,5 +542,6 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
         }
         // puzzle_channel;
         info!("finished reading websocket from client");
+
     });
 }
