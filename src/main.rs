@@ -1,9 +1,10 @@
 use cw_grid_server::{
-    crossword::{self, Cell, Crossword}, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{self, Cell, Crossword}, db::{get_puzzle, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{debug, info, warn};
 use regex::Regex;
+use serde::Serialize;
 use std::{
     collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
@@ -366,10 +367,13 @@ struct PuzzleChannel {
     clients: ThreadSafeSenderVector,
     terminate_sender: mpsc::Sender<bool>,
     crossword: Arc<Mutex<Crossword>>,
+    puzzle_num: String
 }
 
 impl PuzzleChannel {
     fn new(puzzle_num: String) -> Self {
+        let puzzle_num_clone = puzzle_num.clone();
+
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
 
         let (terminate_sender, terminate_rec) = mpsc::channel();
@@ -434,6 +438,7 @@ impl PuzzleChannel {
             clients,
             terminate_sender,
             crossword,
+            puzzle_num: puzzle_num_clone
         }
     }
 
@@ -477,6 +482,9 @@ impl PuzzleChannel {
 
 impl Drop for PuzzleChannel {
     fn drop(&mut self) {
+
+        let data = serde_json::to_string(&*self.crossword.lock().unwrap()).unwrap();
+        save_puzzle(&self.puzzle_num ,&data);
         info!("dropping puzzle channel")
     }
 }
