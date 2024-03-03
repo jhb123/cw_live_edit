@@ -218,7 +218,7 @@ fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, mut stream: TcpStream) {
 
 
 fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
-    /// acquire the html of the page.
+    // acquire the html of the page.
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
         HttpRequest::Post { status_line, .. } => status_line,
@@ -241,9 +241,7 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
 
 }
 
-fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
-    /// Acquire the entire puzzle json. For configuring the crossword grid element in 
-    /// the corresponding page.
+fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) {
 
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
