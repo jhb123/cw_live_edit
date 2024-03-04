@@ -41,7 +41,7 @@ pub fn get_puzzle(id: &str) -> Result<Crossword, Error> {
     let mut file = File::open(puzzle_path)?;
     let mut data = String::new();
     file.read_to_string(&mut data)?;
-    let crossword: Crossword = serde_json::from_str(&data).unwrap();
+    let crossword: Crossword = serde_json::from_str(&data)?;
     Ok(crossword)
 }
 
@@ -52,8 +52,6 @@ pub fn save_puzzle(id: &str, data: &str) -> Result<(), Error> {
     let path = Path::new(&p);
 
     let puzzle_path = path.join(format!("{id}.json") );
-
-    // let f: File = File::create(puzzle_path).is_ok_and(|_| File::open(puzzle_path).unwrap());
 
     let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
         match File::create(&puzzle_path) {
