@@ -1,34 +1,69 @@
 use std::{env, fs::{self, DirEntry, File}, io::{Error, Read, Write}, path::Path};
 use log::{error, info};
+use rusqlite::{named_params, Connection};
+use serde::Serialize;
 
 use crate::crossword::Crossword;
 
 
 
-pub fn init_db() -> Result<(),Error> {
+pub fn create_puzzle_dir() -> Result<(),Error> {
     let path = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
     fs::create_dir_all(path)?;
     Ok(())
 }
 
-pub fn get_all_puzzles() -> Result<Vec<DirEntry>,Error>  {
-    let path = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
+pub fn init_db() -> Result<(), rusqlite::Error> {
+    let conn = Connection::open("puzzle.db").unwrap();
 
-    let puzzles = fs::read_dir(path)?
-        .filter(|res| {
-            res.as_ref().is_ok_and(|x|{
-                x.path()
-                .extension()
-                .is_some_and(|y| {
-                    y.eq("json")
-                })
-            })
-                
+    info!("initialising database");
+    conn.execute(
+        "create table if not exists puzzles (
+             id integer primary key,
+             name text not null unique,
+             file text not null unique
+         )",()
+    )?;
+    Ok(())
+}
+
+pub fn add_puzzle_to_db(name: &str, file: &str) -> Result<(), rusqlite::Error> {
+    info!("inserting data");
+    let conn = Connection::open("puzzle.db").unwrap();
+
+    let mut stmt = conn.prepare(
+        "insert into puzzles (name, file) values (:name, :file)"
+    )?;
+    stmt.execute(named_params! { ":name": name, ":file": file})?;
+
+    Ok(())
+}
+
+#[derive(Debug,Serialize)]
+pub struct PuzzleDbData {
+    id: usize,
+    name: String,
+    file: String
+}
+
+pub fn get_all_puzzle_db() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
+    info!("all data:");
+    let conn = Connection::open("puzzle.db").unwrap();
+
+    let mut stmt = conn.prepare(
+        "select id, name, file from puzzles"
+    )?;
+    
+    let db_data_iter = stmt.query_map([], |row| {
+        Ok(PuzzleDbData {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            file: row.get(2)?,
         })
-        .collect::<Result<Vec<_>, Error>>()?;
+    })?;
 
-    Ok(puzzles)
-
+    let data: Vec<PuzzleDbData> = db_data_iter.map(|x| x.unwrap()).collect();
+    Ok(data)
 }
 
 pub fn get_puzzle(id: &str) -> Result<Crossword, Error> {
@@ -52,7 +87,7 @@ pub fn save_puzzle(id: &str, data: &str) -> Result<(), Error> {
     let path = Path::new(&p);
 
     let puzzle_path = path.join(format!("{id}.json") );
-
+    
     let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
         match File::create(&puzzle_path) {
             Ok(file) => file,
@@ -61,5 +96,8 @@ pub fn save_puzzle(id: &str, data: &str) -> Result<(), Error> {
     });
     file.set_len(0);
     info!("writing crossword to {:?}", file);
-    File::write_all(&mut file, data.as_bytes())
+    File::write_all(&mut file, data.as_bytes())?;
+
+    add_puzzle_to_db(id, puzzle_path.to_str().unwrap());
+    Ok(())
 }

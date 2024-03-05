@@ -7,8 +7,9 @@
 <p>This was rendered in Rust</p>
 <p>{{ data }}</p>
 <ul>
-    <li><a href="/puzzle/1">test puzzle 1</a></li>
-    <li><a href="/puzzle/2">test puzzle 2</a></li>
+    {% for puzzle in puzzles%}
+    <li><a href="/puzzle/{{puzzle.name}}">Puzzle {{puzzle.name}}</a></li>
+    {% endfor %}
 
 </ul>
 {% endblock %}

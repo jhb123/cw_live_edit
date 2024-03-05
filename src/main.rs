@@ -1,9 +1,10 @@
 use cw_grid_server::{
-    crossword::{self, Cell, Crossword}, db::{get_puzzle, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{self, Cell, Crossword}, db::{create_puzzle_dir, get_all_puzzle_db, get_puzzle, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{debug, info, warn};
 use regex::Regex;
+use rusqlite::Connection;
 use serde::Serialize;
 use std::{
     collections::HashMap, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
@@ -23,7 +24,11 @@ type RouteMapping = HashMap<&'static str, fn(&HttpRequest, Arc<Tera>, TcpStream)
 fn main() {
     env_logger::init();
 
-    if let Err(e) = init_db() {
+    if let Err(e) = create_puzzle_dir() {
+        warn!("{}",e)
+    }
+
+    if let Err(e) = init_db(){
         warn!("{}",e)
     }
     
@@ -149,7 +154,12 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
     let mut context = tera::Context::new();
+
+    let puzzle_data = get_all_puzzle_db().unwrap();
+    
     context.insert("data", "Index");
+    context.insert("puzzles", &puzzle_data);
+
     let contents = tera.render("hello.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
