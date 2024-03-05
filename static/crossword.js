@@ -1,4 +1,5 @@
 class CrosswordGrid extends HTMLElement {
+
     constructor() {
         super();
         const shadowRoot = this.attachShadow({ mode: 'closed' })
@@ -31,9 +32,11 @@ class CrosswordGrid extends HTMLElement {
         this.cells = new Map();
         this.activeClue = null;
         
-        let loc = window.location.host + "/puzzle/1"
+        this.src = this.getAttribute('src') || ''
 
-        this.ws = new WebSocket("ws://" + loc)
+        let loc = window.location.host + this.src
+
+        this.ws = new WebSocket("ws://" + loc + '/live')
  
         // Connection opened
         this.ws.addEventListener("open", (event) => {
@@ -52,7 +55,7 @@ class CrosswordGrid extends HTMLElement {
     }
 
     async fetchData() {
-        fetch("/testCrossword/data")
+        fetch(`${this.src}/data`)
             .then(response => {
                 if (!response.ok) {
                     throw new Error("Failed to get crossword data")
@@ -196,8 +199,8 @@ class Cell {
         console.log("creating cell")
         let div = document.createElement('div');
         div.style.position = 'absolute';
-        div.style.top = cellData.x * scale + 'px';
-        div.style.left = cellData.y * scale + 'px';
+        div.style.left = cellData.x * scale + 'px';
+        div.style.top = cellData.y * scale + 'px';
         div.style.width = scale + 'px';
         div.style.height = scale + 'px';
         div.style.background = "#ffffff66";

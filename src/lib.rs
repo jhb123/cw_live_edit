@@ -78,8 +78,6 @@ impl fmt::Display for StatusLine {
 impl HttpRequest {
     pub fn new(mut stream: &TcpStream) -> Result<Self, String> {
         let mut buf_reader = BufReader::new(&mut stream);
-        // .lines()
-        // .map(|result| result.unwrap());
         let mut start_line = String::new();
 
         let _ = match buf_reader.read_line(&mut start_line) {
@@ -206,15 +204,6 @@ impl ThreadPool {
 
             self.sender.as_ref().unwrap().send(job).unwrap();    
     }
-
-
-    // pub fn execute<F, T>(&self, f: F) -> JoinHandle<T>  
-    //     where 
-    //     F: FnOnce() -> T,
-    //     F: Send + 'static,
-    //     T: Send +'static {
-
-    // }
 
 }
 

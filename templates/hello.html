@@ -6,6 +6,11 @@
 <h1>Hello</h1>
 <p>This was rendered in Rust</p>
 <p>{{ data }}</p>
-<a href="/testCrossword">test puzzle</a>
+<ul>
+    {% for puzzle in puzzles%}
+    <li><a href="/puzzle/{{puzzle.name}}">Puzzle {{puzzle.name}}</a></li>
+    {% endfor %}
+
+</ul>
 {% endblock %}
 

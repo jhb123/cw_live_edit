@@ -1,11 +1,13 @@
 use cw_grid_server::{
-    crossword::Crossword, db::{get_puzzle, init_db}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{self, Cell, Crossword}, db::{create_puzzle_dir, get_all_puzzle_db, get_puzzle, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
-use log::{info, warn};
+use log::{debug, info, warn};
 use regex::Regex;
+use rusqlite::Connection;
+use serde::Serialize;
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader}, net::{TcpListener, TcpStream}, sync::{
+    collections::HashMap, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
     }, thread::{self, sleep}, time::Duration
@@ -22,7 +24,11 @@ type RouteMapping = HashMap<&'static str, fn(&HttpRequest, Arc<Tera>, TcpStream)
 fn main() {
     env_logger::init();
 
-    if let Err(e) = init_db() {
+    if let Err(e) = create_puzzle_dir() {
+        warn!("{}",e)
+    }
+
+    if let Err(e) = init_db(){
         warn!("{}",e)
     }
     
@@ -38,8 +44,11 @@ fn main() {
     routes.insert(r"^/testCrossword$", crossword_page);
 
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
+    routes.insert(r"^/puzzle/\d+/data$", puzzle_handler_data);
+    routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
 
-    routes.insert(r"^/dbTest/\d+$", db_test_handler);
+
+    // routes.insert(r"^/dbTest/\d+$", db_test_handler);
 
 
     let tera = Tera::new("templates/**/*").unwrap();
@@ -103,7 +112,7 @@ impl Api {
                 // Regex::new()
                 for (api_route, handler) in self.routes.iter() {
                     let reg = Regex::new(api_route).unwrap();
-                    info!("regex:{}", reg);
+                    debug!("regex:{}", reg);
                     if reg.is_match(incoming_route) {
                         info!("Routing {incoming_route} to {api_route}");
                         return handler(req, Arc::clone(&self.tera), stream);
@@ -145,7 +154,12 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
     let mut context = tera::Context::new();
+
+    let puzzle_data = get_all_puzzle_db().unwrap();
+    
     context.insert("data", "Index");
+    context.insert("puzzles", &puzzle_data);
+
     let contents = tera.render("hello.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
@@ -183,7 +197,8 @@ fn test_crossword(_req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
 fn crossword_page(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
-    let context = tera::Context::new();
+    let mut context = tera::Context::new();
+    context.insert("src", "/puzzle/1");
     let contents = tera.render("crossword.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
@@ -212,51 +227,94 @@ fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, mut stream: TcpStream) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn puzzle_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+
+fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+    // acquire the html of the page.
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
         HttpRequest::Post { status_line, .. } => status_line,
     };
 
     let path_info = Regex::new(r"(?<num>\d+)").unwrap();
+    let caps = path_info.captures(&status_line.route).unwrap();
+    let puzzle_num = caps["num"].to_string();
+
+    // get_grid_page(puzzle_num, tera , stream);
+
+    let response_status_line = "HTTP/1.1 200 Ok";
+    info!("Response Status {}", response_status_line);
+    let mut context = tera::Context::new();
+    context.insert("src", &format!("/puzzle/{puzzle_num}"));
+    let contents = tera.render("crossword.html", &context).unwrap();
+    let length = contents.len();
+    let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+    stream.write_all(response.as_bytes()).unwrap();
+
+}
+
+fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) {
+
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => status_line,
+        HttpRequest::Post { status_line, .. } => status_line,
+    };
+
+    let path_info = Regex::new(r"(?<num>\d+)/data").unwrap();
+    let caps = path_info.captures(&status_line.route).unwrap();
+    let puzzle_num = caps["num"].to_string();
+
+    PUZZLEPOOL.lock().unwrap().get_grid_data(puzzle_num , stream);
+
+    //
+    
+
+}
+
+fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => status_line,
+        HttpRequest::Post { status_line, .. } => status_line,
+    };
+
+    let path_info = Regex::new(r"(?<num>\d+)/live").unwrap();
     let caps = path_info.captures(&status_line.route).unwrap();
     let puzzle_num = caps["num"].to_string();
 
     let handshake = websocket_handshake(req).unwrap();
-
     stream.write_all(handshake.as_bytes()).unwrap();
-    let frame = websocket_message("Hello from rust!");
-    stream.write_all(&frame).unwrap();
 
     // pass info into the puzzle pool so that this request can be routed to the correct puzzle channel
-    PUZZLEPOOL.lock().unwrap().connect_client(puzzle_num, stream);
-}
-
-fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
-    let response_status_line = "HTTP/1.1 200 Ok";
-
-    let status_line = match req {
-        HttpRequest::Get { status_line, .. } => status_line,
-        HttpRequest::Post { status_line, .. } => status_line,
-    };
-
-    let path_info = Regex::new(r"(?<num>\d+)").unwrap();
-    let caps = path_info.captures(&status_line.route).unwrap();
-    let puzzle_num = caps["num"].to_string();
-    
-
-    if let Ok(mut file) = get_puzzle(&format!("{puzzle_num}.json")) {
-        let mut contents = String::new();
-        let length = file.read_to_string(&mut contents).unwrap();
-    
-        let response = format!("{response_status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
-        stream.write_all(response.as_bytes()).unwrap();
-    } else {
-        missing(tera, stream)
+    if let Err(mut stream) = PUZZLEPOOL.lock().unwrap().connect_client(puzzle_num, stream) {
+        let data = close_websocket_message();
+        stream.write_all(&data).unwrap();
     }
-
 }
 
+// fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
+//     let response_status_line = "HTTP/1.1 200 Ok";
+
+//     let status_line = match req {
+//         HttpRequest::Get { status_line, .. } => status_line,
+//         HttpRequest::Post { status_line, .. } => status_line,
+//     };
+
+//     let path_info = Regex::new(r"(?<num>\d+)").unwrap();
+//     let caps = path_info.captures(&status_line.route).unwrap();
+//     let puzzle_num = caps["num"].to_string();
+    
+
+//     if let Ok(mut file) = get_puzzle(&format!("{puzzle_num}.json")) {
+//         let mut contents = String::new();
+//         let length = file.read_to_string(&mut contents).unwrap();
+    
+//         let response = format!("{response_status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
+//         stream.write_all(response.as_bytes()).unwrap();
+//     } else {
+//         missing(tera, stream)
+//     }
+
+// }
 
 
 #[derive(Debug)]
@@ -270,79 +328,204 @@ impl PuzzlePool {
         Self { pool }
     }
 
-    fn connect_client(&mut self, puzzle_num: String, stream: TcpStream) {
+    fn connect_client(&mut self, puzzle_num: String, stream: TcpStream) -> Result<(), TcpStream> {
 
         match self.pool.get(&puzzle_num) {
             Some(puzzle_channel) => {
-                info!("existing puzzle found, routing to it.");
+                info!("Connecting websocket client to existing puzzle.");
                 route_stream_to_puzzle(puzzle_channel.clone(), stream)
             }
             None => {
-                let new_channel = Arc::new(Mutex::new(PuzzleChannel::new()));
-                route_stream_to_puzzle(new_channel.clone(), stream);
-                self.pool.insert(puzzle_num, new_channel.clone());
+                info!("No channel found to route websocket client. Creating a new channel");
+                match PuzzleChannel::new(puzzle_num.clone()){
+                    Ok(channel) => {
+                        let new_channel = Arc::new(Mutex::new(channel));
+                        self.pool.insert(puzzle_num, new_channel.clone());
+                        route_stream_to_puzzle(new_channel.clone(), stream)
+                    },
+                    Err(error) => Err(stream),
+                }
             }
         }
     }
+
+    fn get_grid_data(&mut self, puzzle_num: String, mut stream: TcpStream) {
+        self.pool.iter().for_each(|(name,_)|{
+            info!("channel {}",name)
+        });
+        match self.pool.get(&puzzle_num) {
+            Some(puzzle_channel) => {
+                // get crossword from channel
+                info!("Puzzle channel found. Sending puzzle channel data.");
+                puzzle_channel.lock().unwrap().send_puzzle(stream)
+            }
+            None => {
+                info!("Puzzle channel not found. Loading data from disk");
+
+                match get_puzzle(&puzzle_num) {
+                    Ok(grid) => {
+                        let status_line = "HTTP/1.1 200 Ok";
+                        info!("Response Status {}", status_line);
+                        // let grid = Crossword::demo_grid();
+                        let contents = serde_json::to_string(&grid).unwrap();
+                        let length = contents.len();
+                        let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+                        stream.write_all(response.as_bytes());
+                    },
+                    Err(e) => {
+                        let status_line = "HTTP/1.1 404 Not Found";
+                        info!("Response Status {}", status_line);
+                        // let grid = Crossword::demo_grid();
+                        let contents = format!("{{\"error\" : {} }}",e);
+                        let length = contents.len();
+                        let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+                        stream.write_all(response.as_bytes());
+                    }
+                }
+            }
+        }
+    }
+
+    fn remove_channel(&mut self, puzzle_num: &str) {
+        self.pool.remove(puzzle_num);
+    }
 }
+
+type ThreadSafeSenderVector = Arc<Mutex<Vec<Arc<mpsc::Sender<Vec<u8>>>>>>;
 
 #[derive(Debug)]
 struct PuzzleChannel {
-    sender: Arc<mpsc::Sender<Vec<u8>>>,
-    clients: Arc<Mutex<Vec<mpsc::Sender<Vec<u8>>>>>,
-    running: bool,
+    channel_wide_sender: Arc<mpsc::Sender<Vec<u8>>>,
+    clients: ThreadSafeSenderVector,
+    terminate_sender: mpsc::Sender<bool>,
+    crossword: Arc<Mutex<Crossword>>,
+    puzzle_num: String
 }
 
 impl PuzzleChannel {
-    fn new() -> Self {
+    fn new(puzzle_num: String) -> Result<Self, Error> {
+        let puzzle_num_clone = puzzle_num.clone();
+
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
 
-        let running = true;
-        let clients = Arc::new(Mutex::new(vec![]));
+        let (terminate_sender, terminate_rec) = mpsc::channel();
+
+        let clients: ThreadSafeSenderVector = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
 
+        let crossword = get_puzzle(&puzzle_num)?;
+        let crossword = Arc::new(Mutex::new(crossword));
+
+        let crossword_clone = crossword.clone();
+
         THREADPOOL.execute(move || {
-            while running {
+            loop {
+                if let Ok(should_break) = terminate_rec.recv_timeout(Duration::from_millis(10)){
+                    if should_break {
+                        info!("Puzzle channel received termination signal");
+                        break
+                    }
+                    else {
+                        info!("Puzzle channel received continuation signal");
+                    }
+                }
+
                 let msg = Arc::new(receiver.recv().unwrap());
                 unsafe {
                     let msg_clone = msg.clone();
                     // who cares, this is just debugging
                     info!("{}", String::from_utf8_unchecked(msg_clone.to_vec()));
                 }
+                
+                match String::from_utf8(msg.to_vec()) {
+                    Ok(client_data) => {
+                        let incoming_data: Result<Cell, serde_json::Error>  = serde_json::from_str(&client_data);
+                        match incoming_data {
+                            Ok(deserialised) => {
+                                crossword_clone.lock().unwrap().update_cell(deserialised);
+                            },
+                            Err(_) => {
+                                warn!("cannot deserialise")
+                            },
+                        }
+                        
+                    },
+                    Err(e) => info!("{}", e),
+                }
+
                 let msg_clone = msg.clone();
 
                 clients_clone
                     .lock()
                     .unwrap()
                     .iter()
-                    .filter_map(|x: &Sender<Vec<u8>>| x.send(msg_clone.to_vec()).err())
+                    .filter_map(|x| x.send(msg_clone.to_vec()).err())
                     .for_each(drop);
             }
-            info!("finishing")
+            info!("finishing");
+            PUZZLEPOOL.lock().unwrap().remove_channel(&puzzle_num);
+
         });
 
-        Self {
-            sender: Arc::new(sender),
+        Ok(Self {
+            channel_wide_sender: Arc::new(sender),
             clients,
-            running,
-        }
+            terminate_sender,
+            crossword,
+            puzzle_num: puzzle_num_clone
+        })
     }
 
-    fn add_new_client(&mut self, sender: Sender<Vec<u8>>) {
+    fn add_new_client(&mut self, sender: Arc<Sender<Vec<u8>>>) {
         info!("adding new client to senders");
         self.clients.lock().unwrap().push(sender)
     }
+
+    fn remove_client(&mut self, sender: &Arc<Sender<Vec<u8>>>) {
+        let mut clients = self.clients.lock().unwrap();
+        if let Some(idx) = clients.iter().position(|x| Arc::ptr_eq(x, sender)) {
+            clients.remove(idx);
+            info!("found client, removing")
+        }
+
+        info!("number of remaining clients: {}",clients.len());
+        if clients.len() == 0 {
+            info!("terminating channel");
+            self.terminate_sender.send(true);
+        }
+
+    }
+
+
+    fn send_puzzle(&self, mut stream: TcpStream) {
+        let status_line = "HTTP/1.1 200 Ok";
+        info!("Response Status {}", status_line);
+        let grid = self.crossword.lock().unwrap();
+        let contents = serde_json::to_string(&*grid).unwrap();
+        let length = contents.len();
+        let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+        stream.write_all(response.as_bytes());
+    }
+
+    fn send_puzzle_page(){
+        todo!()
+    }
+
+
 }
 
 impl Drop for PuzzleChannel {
     fn drop(&mut self) {
-        self.running = false;
-        info!("finished")
+
+        let data = serde_json::to_string(&*self.crossword.lock().unwrap()).unwrap();
+        save_puzzle(&self.puzzle_num ,&data);
+        info!("dropping puzzle channel")
     }
 }
 
 
-fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: TcpStream) {
+fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: TcpStream) -> Result<(), TcpStream>{
+
     let _ = stream.set_read_timeout(Some(Duration::from_millis(10)));
 
     let stream = Arc::new(Mutex::new(stream));
@@ -350,10 +533,14 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
 
     let (terminate_sender, terminate_rec) = mpsc::channel();
 
-
+    let sender = Arc::new(sender);
+    let sender_clone = sender.clone();
     {
         puzzle_channel.lock().unwrap().add_new_client(sender);
     }
+
+    let channel_wide_sender = puzzle_channel.lock().unwrap().channel_wide_sender.clone();
+    // let mut set = HashMap::new();
 
     let stream_clone = Arc::clone(&stream);
     let _rec_thread = thread::spawn( move || {
@@ -377,6 +564,8 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
             }
         }
         info!("finished writing data to client");
+        puzzle_channel.lock().unwrap().remove_client(&sender_clone);
+
     });
 
     let _send_thread = thread::spawn(move || {
@@ -386,21 +575,21 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
                 let mut buf_reader = BufReader::new(&mut *st);
                 let _ = match decode_client_frame(&mut buf_reader) {
                     Ok(msg) => {
-                        let sender = puzzle_channel.lock().unwrap().sender.clone();
+                        // put here!
                         match msg.opcode {
                             OpCode::Continuation => todo!(),
                             OpCode::Ping => todo!(),
                             OpCode::Pong => todo!(),
                             OpCode::Close => {
-                                sender.send(msg.body).unwrap();
+                                channel_wide_sender.send(msg.body).unwrap();
                                 let frame = close_websocket_message();
                                 st.write_all(&frame).unwrap();
                                 terminate_sender.send(true).unwrap();
                                 break
                             },
                             OpCode::Reserved => panic!("Cannot handle this opcode"),
-                            OpCode::Text => sender.send(msg.body),
-                            OpCode::Binary => sender.send(msg.body),
+                            OpCode::Text => channel_wide_sender.send(msg.body),
+                            OpCode::Binary => channel_wide_sender.send(msg.body),
                         }
                     },
                     Err(_err) => {
@@ -413,5 +602,8 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
         }
         // puzzle_channel;
         info!("finished reading websocket from client");
+
     });
+
+    Ok(())
 }
