@@ -7,6 +7,13 @@
     <script src="https://unpkg.com/htmx.org@1.9.9"></script> 
 </head>
 <body hx-boost id="main-body" class="bg-slate-50 dark:bg-slate-900 w-screen text-slate-900 dark:text-emerald-200">
+  <nav>
+    <h5>Navigation</h5>
+    <ul>
+      <li><a href="/">Home</a></li>
+      {# <li><a href="/">Home</a></li> #}
+    </ul>
+  </nav>
     <main>
       {% block content %}{% endblock %}
     </main>
