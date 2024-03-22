@@ -7,7 +7,7 @@ use regex::Regex;
 use rusqlite::Connection;
 use serde::Serialize;
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
+    collections::HashMap, env, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
     }, thread::{self, sleep}, time::Duration
@@ -47,6 +47,8 @@ fn main() {
     routes.insert(r"^/puzzle/\d+/data$", puzzle_handler_data);
     routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
 
+    routes.insert(r"^/puzzle/add", puzzle_add_handler);
+
 
     // routes.insert(r"^/dbTest/\d+$", db_test_handler);
 
@@ -58,10 +60,11 @@ fn main() {
     let api_arc = Arc::new(api);
 
     // let pool = ThreadPool::new(4);
+    let port = env::var("PUZZLE_PORT").unwrap_or("5051".to_string());
+    
+    let addr = format!("0.0.0.0:{port}");
 
-    let addr = "127.0.0.1:5051";
-
-    let listener = TcpListener::bind(addr).unwrap();
+    let listener = TcpListener::bind(&addr).unwrap();
     info!("Started on: http://{addr}");
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -289,6 +292,31 @@ fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStrea
         let data = close_websocket_message();
         stream.write_all(&data).unwrap();
     }
+}
+
+fn puzzle_add_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
+
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => todo!("Throw a useful error"),
+        HttpRequest::Post { status_line, headers, body} => {
+
+            let body = String::from_utf8(body.clone()).unwrap();
+            let crossword: Crossword  = serde_json::from_str(&body).unwrap();
+
+            let response_status_line = "HTTP/1.1 200 Ok";
+            info!("Response Status {}", response_status_line);
+            let contents = serde_json::to_string(&crossword).unwrap();
+            let length = contents.len();
+            let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+            stream.write_all(response.as_bytes()).unwrap();
+
+        },
+    };
+
+    
+
+    
+
 }
 
 // fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
