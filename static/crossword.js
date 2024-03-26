@@ -156,7 +156,7 @@ class CrosswordGrid extends HTMLElement {
                 cell.div.addEventListener('click', () => {
                     var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
-                        node.style.background = "#ffffff66";
+                        node.style.background = "#ffffffff";
                     });
                     this.activeClue = cell.handleClick();
                     this.activeClue.setActiveCell(cell)
@@ -203,7 +203,7 @@ class Cell {
         div.style.top = cellData.y * scale + 'px';
         div.style.width = scale + 'px';
         div.style.height = scale + 'px';
-        div.style.background = "#ffffff66";
+        div.style.background = "#ffffffff";
         div.style.boxSizing = "border-box";
         div.style.border = '1px solid black';
         div.style.textAlign = "center"
@@ -258,7 +258,7 @@ class Cell {
     }
 
     handleHighlight() {
-        this.div.style.background = "green"
+        this.div.style.background = "#B6FFDA"
     }
 
 
@@ -291,13 +291,13 @@ class Clue {
         for(var i = 0; i < this.cells.length; ++i)  {
             if (this.cells[i] === cell) {
                 this.cellIdx = i
-                this.cells[this.cellIdx].div.style.background = "red"
+                this.cells[this.cellIdx].div.style.background = "#FFF8B6"
                 console.log(`active cell ${this.cells[this.cellIdx].coords}`)
                 return
             }
         }
         this.cellIdx = this.cells.length - 1
-        this.cells[this.cellIdx].div.style.background = "red"
+        this.cells[this.cellIdx].div.style.background = "#FFF8B6"
         console.log(`active cell ${this.cells[this.cellIdx].coords}`)
     }
 

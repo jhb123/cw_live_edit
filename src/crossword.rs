@@ -1,7 +1,7 @@
 use std::collections::{HashSet,HashMap};
 
 use log::info;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Direction {
@@ -65,7 +65,14 @@ impl Crossword {
 pub struct Cell {
     x: usize,
     y: usize,
+    #[serde(deserialize_with = "char_deserialise")]
     c: char,
+}
+
+fn char_deserialise<'de, D>(deserializer: D) -> Result<char, D::Error> where D: Deserializer<'de> {
+    let c_str: String = Deserialize::deserialize(deserializer)?;
+    let c = c_str.chars().next().unwrap_or(' ');
+    Ok(c)
 }
 
 impl Cell {

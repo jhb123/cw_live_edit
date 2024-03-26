@@ -1,13 +1,12 @@
 use cw_grid_server::{
-    crossword::{self, Cell, Crossword}, db::{create_puzzle_dir, get_all_puzzle_db, get_puzzle, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{self, Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
-use log::{debug, info, warn};
+use log::{info, warn};
 use regex::Regex;
-use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
+    collections::HashMap, env, fs::File, io::{prelude::*, BufReader, Error}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
     }, thread::{self, sleep}, time::Duration
@@ -47,6 +46,8 @@ fn main() {
     routes.insert(r"^/puzzle/\d+/data$", puzzle_handler_data);
     routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
 
+    routes.insert(r"^/puzzle/add", puzzle_add_handler);
+
 
     // routes.insert(r"^/dbTest/\d+$", db_test_handler);
 
@@ -58,10 +59,11 @@ fn main() {
     let api_arc = Arc::new(api);
 
     // let pool = ThreadPool::new(4);
+    let port = env::var("PUZZLE_PORT").unwrap_or("5051".to_string());
+    
+    let addr = format!("0.0.0.0:{port}");
 
-    let addr = "127.0.0.1:5051";
-
-    let listener = TcpListener::bind(addr).unwrap();
+    let listener = TcpListener::bind(&addr).unwrap();
     info!("Started on: http://{addr}");
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -104,35 +106,30 @@ impl Api {
             } => status_line.route.as_str(),
         };
 
-        // base case
-
         info!("{req}");
         match req {
             HttpRequest::Get { .. } => {
                 // Regex::new()
-                for (api_route, handler) in self.routes.iter() {
-                    let reg = Regex::new(api_route).unwrap();
-                    debug!("regex:{}", reg);
-                    if reg.is_match(incoming_route) {
-                        info!("Routing {incoming_route} to {api_route}");
-                        return handler(req, Arc::clone(&self.tera), stream);
-                    };
-                }
-                warn!("Didn't match any routes");
-                missing(Arc::clone(&self.tera), stream)
+                self.route_incoming_request(incoming_route, req, stream);
             }
             HttpRequest::Post { .. } => {
-                for (route, handler) in self.routes.iter() {
-                    let reg = Regex::new(route).unwrap();
-                    if reg.is_match(route) {
-                        return handler(req, Arc::clone(&self.tera), stream);
-                    };
-                }
-                missing(Arc::clone(&self.tera), stream)
+                self.route_incoming_request(incoming_route, req, stream);
             }
         }
     }
 
+    fn route_incoming_request(&self, incoming_route: &str, req: &HttpRequest, stream: TcpStream) {
+        for (api_route, handler) in self.routes.iter() {
+            let reg = Regex::new(api_route).unwrap();
+            if reg.is_match(incoming_route) {
+                info!("Routing {incoming_route} to {api_route}");
+                return handler(req, Arc::clone(&self.tera), stream);
+            };
+        }
+        warn!("Didn't match any routes");
+        missing(Arc::clone(&self.tera), stream)
+    }
+    
     fn register_routes(routes: RouteMapping, tera: Arc<Tera>) -> Self {
         Self { routes, tera }
     }
@@ -291,30 +288,35 @@ fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStrea
     }
 }
 
-// fn db_test_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
-//     let response_status_line = "HTTP/1.1 200 Ok";
+#[derive(Serialize, Deserialize, Debug)]
+struct AddPuzzleBody{
+    name: String,
+    crossword: Crossword
+}
 
-//     let status_line = match req {
-//         HttpRequest::Get { status_line, .. } => status_line,
-//         HttpRequest::Post { status_line, .. } => status_line,
-//     };
+fn puzzle_add_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
 
-//     let path_info = Regex::new(r"(?<num>\d+)").unwrap();
-//     let caps = path_info.captures(&status_line.route).unwrap();
-//     let puzzle_num = caps["num"].to_string();
-    
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => todo!("Throw a useful error"),
+        HttpRequest::Post { status_line, headers, body} => {
 
-//     if let Ok(mut file) = get_puzzle(&format!("{puzzle_num}.json")) {
-//         let mut contents = String::new();
-//         let length = file.read_to_string(&mut contents).unwrap();
-    
-//         let response = format!("{response_status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
-//         stream.write_all(response.as_bytes()).unwrap();
-//     } else {
-//         missing(tera, stream)
-//     }
+            let body = String::from_utf8(body.clone()).unwrap();
+            let request_data: AddPuzzleBody  = serde_json::from_str(&body).unwrap();
 
-// }
+
+            create_new_puzzle(&request_data.name, &request_data.crossword);
+
+            let response_status_line = "HTTP/1.1 200 Ok";
+            info!("Response Status {}", response_status_line);
+            let contents = serde_json::to_string(&request_data.crossword).unwrap();
+            let length = contents.len();
+            let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+            stream.write_all(response.as_bytes()).unwrap();
+
+        },
+    };
+
+}
 
 
 #[derive(Debug)]
@@ -517,7 +519,7 @@ impl PuzzleChannel {
 impl Drop for PuzzleChannel {
     fn drop(&mut self) {
 
-        let data = serde_json::to_string(&*self.crossword.lock().unwrap()).unwrap();
+        let data = self.crossword.lock().unwrap();
         save_puzzle(&self.puzzle_num ,&data);
         info!("dropping puzzle channel")
     }

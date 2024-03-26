@@ -1,20 +1,28 @@
 use std::{env, fs::{self, DirEntry, File}, io::{Error, Read, Write}, path::Path};
 use log::{error, info};
+use lazy_static::lazy_static;
 use rusqlite::{named_params, Connection};
 use serde::Serialize;
 
-use crate::crossword::Crossword;
+use crate::crossword::{self, Crossword};
 
+lazy_static! {
+    static ref PUZZLE_DIR_PATH: String = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
+    static ref PUZZLE_DB_PATH: String = {
+        let puzzle_dir_path = &*PUZZLE_DIR_PATH;
+        format!("{}/puzzle.db", puzzle_dir_path)
+    };
+}
 
 
 pub fn create_puzzle_dir() -> Result<(),Error> {
-    let path = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
-    fs::create_dir_all(path)?;
+    fs::create_dir_all(&*PUZZLE_DIR_PATH)?;
     Ok(())
 }
 
 pub fn init_db() -> Result<(), rusqlite::Error> {
-    let conn = Connection::open("puzzle.db").unwrap();
+
+    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
 
     info!("initialising database");
     conn.execute(
@@ -29,7 +37,7 @@ pub fn init_db() -> Result<(), rusqlite::Error> {
 
 pub fn add_puzzle_to_db(name: &str, file: &str) -> Result<(), rusqlite::Error> {
     info!("inserting data");
-    let conn = Connection::open("puzzle.db").unwrap();
+    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
 
     let mut stmt = conn.prepare(
         "insert into puzzles (name, file) values (:name, :file)"
@@ -48,7 +56,7 @@ pub struct PuzzleDbData {
 
 pub fn get_all_puzzle_db() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
     info!("all data:");
-    let conn = Connection::open("puzzle.db").unwrap();
+    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
 
     let mut stmt = conn.prepare(
         "select id, name, file from puzzles"
@@ -66,12 +74,34 @@ pub fn get_all_puzzle_db() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
     Ok(data)
 }
 
+pub fn get_puzzle_db(id: &str) -> Result<PuzzleDbData, rusqlite::Error> {
+    info!("all data:");
+    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
+
+    let mut stmt = conn.prepare(
+        "select id, name, file from puzzles where id=:id"
+    )?;
+    
+    let db_data_iter = stmt.query_map(&[(":id", id)], |row| {
+        Ok(PuzzleDbData {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            file: row.get(2)?,
+        })
+    })?;
+
+    let data: PuzzleDbData = db_data_iter.map(|x| x.unwrap()).next().unwrap();
+    Ok(data)
+}
+
+
 pub fn get_puzzle(id: &str) -> Result<Crossword, Error> {
-    let p = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
 
-    let path = Path::new(&p);
+    let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
 
-    let puzzle_path = path.join(format!("{id}.json"));
+    let data = get_puzzle_db(id).unwrap();
+
+    let puzzle_path = puzzle_dir.join(format!("{}.json",data.name));
 
     let mut file = File::open(puzzle_path)?;
     let mut data = String::new();
@@ -81,12 +111,12 @@ pub fn get_puzzle(id: &str) -> Result<Crossword, Error> {
 }
 
 
-pub fn save_puzzle(id: &str, data: &str) -> Result<(), Error> {
-    let p = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
+pub fn save_puzzle(id: &str, cw: &Crossword) -> Result<(), Error> {
+    let data = serde_json::to_string(cw)?;
 
-    let path = Path::new(&p);
+    let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
 
-    let puzzle_path = path.join(format!("{id}.json") );
+    let puzzle_path = puzzle_dir.join(format!("{id}.json") );
     
     let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
         match File::create(&puzzle_path) {
@@ -94,10 +124,36 @@ pub fn save_puzzle(id: &str, data: &str) -> Result<(), Error> {
             Err(e) => panic!("Problem creating file {}", e)
         }
     });
-    file.set_len(0);
+    
+    file.set_len(0)?;
     info!("writing crossword to {:?}", file);
+
     File::write_all(&mut file, data.as_bytes())?;
 
-    add_puzzle_to_db(id, puzzle_path.to_str().unwrap());
+    Ok(())
+}
+
+pub fn create_new_puzzle(id: &str, cw: &Crossword) -> Result<(), Error> {
+    let data = serde_json::to_string(cw)?;
+
+    let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
+
+    let puzzle_path = puzzle_dir.join(format!("{id}.json") );
+    
+    let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
+        match File::create(&puzzle_path) {
+            Ok(file) => file,
+            Err(e) => panic!("Problem creating file {}", e)
+        }
+    });
+    
+    file.set_len(0)?;
+    info!("writing crossword to {:?}", file);
+
+    File::write_all(&mut file, data.as_bytes())?;
+
+    add_puzzle_to_db(id, puzzle_path.to_str().unwrap()).unwrap();
+
+    save_puzzle(id, &cw).unwrap();
     Ok(())
 }
