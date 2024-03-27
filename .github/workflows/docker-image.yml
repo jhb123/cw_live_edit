@@ -26,4 +26,4 @@ jobs:
         run: docker build . --file Dockerfile --tag jhb123/cw-live-edit:$(date +%s)
     
       - name: Push to Docker Hub
-        run: docker push jhb123/cw-live-edit:$(date +%s)
+        run: docker push docker.io/jhb123/cw-live-edit:$(date +%s)
