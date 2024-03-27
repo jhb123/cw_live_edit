@@ -23,7 +23,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build the Docker image
-        run: docker build . --file Dockerfile --tag jhb123/cw-live-edit:$(date +%s)
+        run: docker build . --file Dockerfile --tag jhb123/cw-live-edit:latest
     
       - name: Push to Docker Hub
-        run: docker push docker.io/jhb123/cw-live-edit:$(date +%s)
+        run: docker push docker.io/jhb123/cw-live-edit:latest
