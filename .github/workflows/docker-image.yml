@@ -27,3 +27,12 @@ jobs:
     
       - name: Push to Docker Hub
         run: docker push docker.io/jhb123/cw-live-edit:latest
+
+      - name: Login to AWS
+        run: |
+          aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_REPO }}
+
+      - name: Push to AWS ECR
+        run: |
+          docker image tag jhb123/cw-live-edit:latest ${{ secrets.AWS_REPO }}/cw-live-edit:latest
+          docker push ${{ secrets.AWS_REPO }}/cw-live-edit:latest
