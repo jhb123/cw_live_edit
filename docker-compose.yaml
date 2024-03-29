@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PUZZLE_PATH: /puzzles
+      PUZZLE_PORT: 5051
+      RUST_LOG: info
+    volumes:
+      - puzzle_data:/puzzles
+    ports:
+      - "5051:5051"
+
+volumes:
+  puzzle_data:
