@@ -4,54 +4,54 @@ class CrosswordGrid extends HTMLElement {
         super();
         const shadowRoot = this.attachShadow({ mode: 'closed' })
 
-        this.grid = document.createElement('div')
-        this.grid.id = "crossword"
-        this.grid.style.background = "black"
-        this.grid.style.width = 0
-        shadowRoot.append(this.grid)
+        fetch(`/crossword.html`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Failed to get crossword data")
+            }
+            return response.text();
+        })
+        .then( template_data => {
 
-        this.acrossHintsParent = document.createElement('div')
-        this.acrossHintsParent.id = "across-hint-container"
-        this.acrossHintsParent.textContent = "Across clues"
-        shadowRoot.append(this.acrossHintsParent)
-        this.acrossHints = document.createElement('ul')
-        this.acrossHints.id = "across-hints"
-        this.acrossHintsParent.appendChild(this.acrossHints)
+            const template = document.createElement('template');
+            template.innerHTML = template_data;
+            shadowRoot.appendChild(template.content.cloneNode(true));
 
-        this.downHintsParent = document.createElement('div')
-        this.downHintsParent.id = "down-hint-container"
-        this.downHintsParent.textContent = "Down clues"
-        shadowRoot.append(this.downHintsParent)
-        this.downHints = document.createElement('ul')
-        this.downHints.id = "down-hints"
-        this.downHintsParent.appendChild(this.downHints)
+            this.grid = shadowRoot.getElementById('crossword')
 
-        this.data = null;
+            this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
+            this.acrossHints = shadowRoot.getElementById('across-hints')
 
-        this.scale = 30
-        this.cells = new Map();
-        this.activeClue = null;
-        
-        this.src = this.getAttribute('src') || ''
+            this.downHintsParent = shadowRoot.getElementById('down-hint-container')
+            this.downHints = shadowRoot.getElementById('down-hints')
 
-        let loc = window.location.host + this.src
+            this.data = null;
 
-        this.ws = new WebSocket("ws://" + loc + '/live')
- 
-        // Connection opened
-        this.ws.addEventListener("open", (event) => {
-          this.ws.send("Hello Server!");
-        });
-        
-        // Listen for messages
-        this.ws.addEventListener("message", (event) => {
-            let message = JSON.parse(event.data);
-            this.handleUpdateTextFromServer(message)
-            console.log("Message from server ",message);            
-        });
+            this.scale = 30
+            this.cells = new Map();
+            this.activeClue = null;
+            
+            this.src = this.getAttribute('src') || ''
 
-        this.fetchData().then(() => {
-        });
+            let loc = window.location.host + this.src
+
+            this.ws = new WebSocket("ws://" + loc + '/live')
+    
+            // Connection opened
+            this.ws.addEventListener("open", (event) => {
+            this.ws.send("Hello Server!");
+            });
+            
+            // Listen for messages
+            this.ws.addEventListener("message", (event) => {
+                let message = JSON.parse(event.data);
+                this.handleUpdateTextFromServer(message)
+                console.log("Message from server ",message);            
+            });
+
+            this.fetchData().then(() => {
+            });
+        })
     }
 
     async fetchData() {
@@ -180,6 +180,13 @@ class CrosswordGrid extends HTMLElement {
         let hintEl = document.createElement('li');
         hintEl.style.listStyleType = "none";
         hintEl.textContent = `${clueName}) ${clueData["hint"]}`;
+        return hintEl;
+    }
+
+    createHintElementTest() {
+        let hintEl = document.createElement('li');
+        hintEl.style.listStyleType = "none";
+        hintEl.textContent = `test`;
         return hintEl;
     }
 
