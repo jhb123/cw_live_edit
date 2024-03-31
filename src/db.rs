@@ -50,7 +50,7 @@ pub fn add_puzzle_to_db(name: &str, file: &str) -> Result<(), rusqlite::Error> {
 #[derive(Debug,Serialize)]
 pub struct PuzzleDbData {
     id: usize,
-    name: String,
+    pub name: String,
     file: String
 }
 

@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{self, Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{self, Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{info, warn};
@@ -36,11 +36,11 @@ fn main() {
     let mut routes: RouteMapping = HashMap::new();
     routes.insert(r"^/$", index_handler);
     routes.insert(r"^/hello$", hello_handler);
-    routes.insert(r"^/foo/\d+$", variable_request_test);
 
     routes.insert(r"^/crossword.js$", crossword_js);
-    routes.insert(r"^/testCrossword/data$", test_crossword);
-    routes.insert(r"^/testCrossword$", crossword_page);
+    routes.insert(r"^/crossword.html$", crossword_html);
+    routes.insert(r"^/crossword.css$", crossword_css);
+
 
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
     routes.insert(r"^/puzzle/\d+/data$", puzzle_handler_data);
@@ -214,16 +214,25 @@ fn missing(tera: Arc<Tera>, mut stream: TcpStream) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, mut stream: TcpStream) {
+fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream) {
+    static_file_handler(stream, "static/crossword.js");
+}
+fn crossword_html(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream) {
+    static_file_handler(stream, "static/crossword.html");
+}
+fn crossword_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream) {
+    static_file_handler(stream, "static/crossword.css");
+}
+
+fn static_file_handler(mut stream: TcpStream, path: &str) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
-    let mut file = File::open("static/crossword.js").unwrap();
+    let mut file = File::open(path).unwrap();
     let mut contents = String::new();
     let length = file.read_to_string(&mut contents).unwrap();
     let response = format!("{status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
     stream.write_all(response.as_bytes()).unwrap();
 }
-
 
 fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     // acquire the html of the page.
@@ -242,6 +251,9 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     info!("Response Status {}", response_status_line);
     let mut context = tera::Context::new();
     context.insert("src", &format!("/puzzle/{puzzle_num}"));
+    let data = get_puzzle_db(&puzzle_num).unwrap();
+
+    context.insert("name", &format!("{}",data.name));
     let contents = tera.render("crossword.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
