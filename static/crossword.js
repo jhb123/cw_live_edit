@@ -192,7 +192,6 @@ class CrosswordGrid extends HTMLElement {
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
-                    cell.div.focus();
                     var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
                         node.style.background = "#ffffffff";
@@ -239,6 +238,8 @@ class CrosswordGrid extends HTMLElement {
 class Cell {
     constructor(cellData, scale) {
         let div = document.createElement('div');
+        div.tabIndex=0
+        // div.contentEditable = true;
         div.style.position = 'absolute';
         div.style.left = cellData.x * scale + '%';
         div.style.top = cellData.y * scale + '%';
@@ -315,7 +316,6 @@ class Clue {
         this.forwardCellIterator = this.moveCellForward()
         this.backwardCellIterator = this.moveCellBackward()
         this.cellIdx = null
-
     }
 
     highlight() {
