@@ -14,9 +14,9 @@ class CrosswordGrid extends HTMLElement {
         .then( template_data => {
 
             const template = document.createElement('template');
+            
             template.innerHTML = template_data;
             shadowRoot.appendChild(template.content.cloneNode(true));
-
             this.grid = shadowRoot.getElementById('crossword')
 
             this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
@@ -26,6 +26,9 @@ class CrosswordGrid extends HTMLElement {
             this.downHints = shadowRoot.getElementById('down-hints')
 
             this.data = null;
+
+            this.downHintsData = []
+            this.acrossHintsData = []
 
             this.scale = 30
             this.cells = new Map();
@@ -46,7 +49,6 @@ class CrosswordGrid extends HTMLElement {
             this.ws.addEventListener("message", (event) => {
                 let message = JSON.parse(event.data);
                 this.handleUpdateTextFromServer(message)
-                console.log("Message from server ",message);            
             });
 
             this.fetchData().then(() => {
@@ -64,6 +66,21 @@ class CrosswordGrid extends HTMLElement {
             })
             .then(data => {
                 this.data = data
+                let size = 0
+                for (let key in this.data["across"]) {
+                // this.data.across.forEach( clue => {
+                    let clue = this.data["across"][key]
+                    clue.cells.forEach( coord => {
+                        if (coord.x > size){
+                            size = coord.x
+                        }
+                        if (coord.x > size){
+                            size = coord.y
+                        }
+                    })
+                }
+                this.scale = 100/(size+1)
+
                 this.drawFreshGrid()
                 this.grid.tabIndex = 0
                 this.grid.focus()
@@ -73,7 +90,6 @@ class CrosswordGrid extends HTMLElement {
 
                     } else {
                         this.activeClue.highlight()
-                        // console.log(key)
                         let cell;
                         switch(key.key) {
                             case "Backspace":
@@ -118,33 +134,55 @@ class CrosswordGrid extends HTMLElement {
     drawFreshGrid() {
         for (let incomingClueName in this.data.across) {
             let incomingClueData = this.data.across[incomingClueName];
-            this.handleIncomingClue(incomingClueName, this.acrossHints, incomingClueData);
+            this.handleIncomingClue(incomingClueName, this.acrossHintsData, incomingClueData);
         }
 
         for (let incomingClueName in this.data.down) {
             let incomingClueData = this.data.down[incomingClueName];
-            this.handleIncomingClue(incomingClueName, this.downHints, incomingClueData);
+            this.handleIncomingClue(incomingClueName, this.downHintsData, incomingClueData);
         }
+
+        this.drawHints()
 
     }
 
     handleUpdateTextFromServer(new_cell) {
-        console.log(new_cell)
         let key = `${new_cell.x},${new_cell.y}`
-        console.log(key)
-        // let frobnicate = new Cell(new_cell, this.scale)
         let cell = this.cells.get(key)
         cell.text = new_cell.c
         cell.updateText(new_cell.c)
-        // this.cells.set(key, frobnicate)
-        console.log(this.cells)
+    }
 
-        // this.grid.replaceChild(frobnicate.div, old_div.div)
+    sortfn(a,b) {
+        const numA = parseInt(a.name);
+        const numB = parseInt(b.name);        
+        if (numA < numB) {
+            return -1;
+        } else if (numA > numB) {
+            return 1;
+        } else {
+            return a.name.localeCompare(b.name);
+        }    
+    }
+
+    drawHints(){
+        this.acrossHintsData.sort(this.sortfn)
+        this.downHintsData.sort(this.sortfn)
+        this.acrossHintsData.forEach( clue => {
+            let hintEl = this.createHintElement(clue.name, clue.value);
+            this.acrossHints.appendChild(hintEl);
+        });
+
+        this.downHintsData.forEach( clue => {
+            let hintEl = this.createHintElement(clue.name, clue.value);
+            this.downHints.appendChild(hintEl);
+        });
+
     }
 
     handleIncomingClue(incomingClueName, clueDirection, incomingClueData) {
-        let hintEl = this.createHintElement(incomingClueName, incomingClueData);
-        clueDirection.appendChild(hintEl);
+        // let hintEl = this.createHintElement(incomingClueName, incomingClueData);
+        clueDirection.push({name: incomingClueName, value: incomingClueData["hint"]});
 
         let clue = new Clue(incomingClueName);
 
@@ -154,6 +192,7 @@ class CrosswordGrid extends HTMLElement {
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
+                    cell.div.focus();
                     var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
                         node.style.background = "#ffffffff";
@@ -177,39 +216,34 @@ class CrosswordGrid extends HTMLElement {
     }
 
     createHintElement(clueName, clueData) {
-        let hintEl = document.createElement('li');
-        hintEl.style.listStyleType = "none";
-        hintEl.textContent = `${clueName}) ${clueData["hint"]}`;
-        return hintEl;
-    }
-
-    createHintElementTest() {
-        let hintEl = document.createElement('li');
-        hintEl.style.listStyleType = "none";
-        hintEl.textContent = `test`;
+        let hintEl = document.createElement('tr');
+        hintEl.innerHTML =
+        `<td class="clue-hint-num">${clueName}</td>
+        <td class="clue-hint-text">${clueData}</td>`
+        hintEl.classList.add("clue-hint");
         return hintEl;
     }
 
     expandBackgroundElement(cellData) {
-        if ((cellData.x + 1) * this.scale > this.grid.clientWidth) {
-            this.grid.style.width = (cellData.x + 1) * this.scale + "px";
-        }
-        if ((cellData.y + 1) * this.scale > this.grid.clientHeight) {
-            this.grid.style.height = (cellData.y + 1) * this.scale + "px";
-        }
+        this.grid.style.height = this.grid.width
+        // if ((cellData.x + 1) * this.scale > this.grid.clientWidth) {
+        //     this.grid.style.width = (cellData.x + 1) * this.scale + "px";
+        // }
+        // if ((cellData.y + 1) * this.scale > this.grid.clientHeight) {
+        //     this.grid.style.height = (cellData.y + 1) * this.scale + "px";
+        // }
     }
 
 }
 
 class Cell {
     constructor(cellData, scale) {
-        console.log("creating cell")
         let div = document.createElement('div');
         div.style.position = 'absolute';
-        div.style.left = cellData.x * scale + 'px';
-        div.style.top = cellData.y * scale + 'px';
-        div.style.width = scale + 'px';
-        div.style.height = scale + 'px';
+        div.style.left = cellData.x * scale + '%';
+        div.style.top = cellData.y * scale + '%';
+        div.style.width = scale + '%';
+        div.style.height = scale + '%';
         div.style.background = "#ffffffff";
         div.style.boxSizing = "border-box";
         div.style.border = '1px solid black';
@@ -299,13 +333,11 @@ class Clue {
             if (this.cells[i] === cell) {
                 this.cellIdx = i
                 this.cells[this.cellIdx].div.style.background = "#FFF8B6"
-                console.log(`active cell ${this.cells[this.cellIdx].coords}`)
                 return
             }
         }
         this.cellIdx = this.cells.length - 1
         this.cells[this.cellIdx].div.style.background = "#FFF8B6"
-        console.log(`active cell ${this.cells[this.cellIdx].coords}`)
     }
 
     *moveCellForward() {

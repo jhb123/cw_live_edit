@@ -1,4 +1,76 @@
-#crossword {
+.crossword{
+    position: relative;
+    height: 450px;
+    width: 450px;
+    display: flex;
+    aspect-ratio: 1 / 1;
     background: black;
-    width: 0;
+    margin: 10px;
+}
+
+@media (max-width: 764px) {
+    .crossword {
+        height: 350px;
+        width: 350px;
+        margin: auto;
+    }
+    h2 {
+        font-size: 20px;
+        margin: 5px;
+    }
+}
+
+.hint-container{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+    padding: 0 10px;
+    flex: 1;
+    height: 100%
+}
+
+@media (max-width: 764px) {
+    .hint-container {
+        height: calc(85vh - 350px);;
+    }    
+}
+
+@media (min-width: 764px) {
+    .hint-container {
+        height: 450px;
+    }    
+}
+
+
+.hints{
+    flex: 1;
+    overflow-y: scroll;
+}
+
+.flex-container-big {
+    display: flex;
+    width: fit-content;
+    flex-direction: column;
+}   
+
+@media (min-width: 764px) {
+    .flex-container-big {
+        display: flex;
+        flex-direction: row;
+    }    
+}
+
+.clues {
+    display: flex;
+}  
+
+.clue-hint-num {
+    padding-left: 10px;
+    padding-right: 20px;
+    vertical-align: top;
+}
+
+.clue-hint {
+    padding-bottom: 10px;
 }

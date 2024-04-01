@@ -40,6 +40,7 @@ fn main() {
     routes.insert(r"^/crossword.js$", crossword_js);
     routes.insert(r"^/crossword.html$", crossword_html);
     routes.insert(r"^/crossword.css$", crossword_css);
+    routes.insert(r"^/styles.css$", styles_css);
 
 
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
@@ -163,45 +164,6 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn variable_request_test(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
-    let response_status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", response_status_line);
-    let mut context = tera::Context::new();
-    let status_line = match req {
-        HttpRequest::Get { status_line, .. } => status_line,
-        HttpRequest::Post { status_line, .. } => status_line,
-    };
-
-    let path_info = Regex::new(r"(?<num>\d+)").unwrap();
-    let caps = path_info.captures(&status_line.route).unwrap();
-    context.insert("data", &caps["num"]);
-    let contents = tera.render("foo.html", &context).unwrap();
-    let length = contents.len();
-    let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-}
-
-fn test_crossword(_req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
-    let status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", status_line);
-    let grid = Crossword::demo_grid();
-    let contents = serde_json::to_string(&grid).unwrap();
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-}
-
-fn crossword_page(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
-    let status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", status_line);
-    let mut context = tera::Context::new();
-    context.insert("src", "/puzzle/1");
-    let contents = tera.render("crossword.html", &context).unwrap();
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-}
-
 
 fn missing(tera: Arc<Tera>, mut stream: TcpStream) {
     let status_line = "HTTP/1.1 404 Not Found";
@@ -215,22 +177,27 @@ fn missing(tera: Arc<Tera>, mut stream: TcpStream) {
 }
 
 fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream) {
-    static_file_handler(stream, "static/crossword.js");
+    static_file_handler(
+        stream,"static/crossword.js","text/javascript");
 }
 fn crossword_html(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream) {
-    static_file_handler(stream, "static/crossword.html");
+    static_file_handler(stream, "static/crossword.html","text/html");
 }
 fn crossword_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream) {
-    static_file_handler(stream, "static/crossword.css");
+    static_file_handler(stream, "static/crossword.css","text/css");
 }
 
-fn static_file_handler(mut stream: TcpStream, path: &str) {
+fn styles_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream) {
+    static_file_handler(stream, "static/styles.css","text/css");
+}
+
+fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) {
     let status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", status_line);
     let mut file = File::open(path).unwrap();
     let mut contents = String::new();
     let length = file.read_to_string(&mut contents).unwrap();
-    let response = format!("{status_line}\r\nContent-Length: {length}\nContent-Type: text/javascript\r\n\r\n{contents}");
+    let response = format!("{status_line}\r\nContent-Length: {length}\nContent-Type: {content_type}\r\n\r\n{contents}");
     stream.write_all(response.as_bytes()).unwrap();
 }
 
@@ -244,8 +211,6 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) {
     let path_info = Regex::new(r"(?<num>\d+)").unwrap();
     let caps = path_info.captures(&status_line.route).unwrap();
     let puzzle_num = caps["num"].to_string();
-
-    // get_grid_page(puzzle_num, tera , stream);
 
     let response_status_line = "HTTP/1.1 200 Ok";
     info!("Response Status {}", response_status_line);
@@ -273,10 +238,6 @@ fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) {
     let puzzle_num = caps["num"].to_string();
 
     PUZZLEPOOL.lock().unwrap().get_grid_data(puzzle_num , stream);
-
-    //
-    
-
 }
 
 fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
