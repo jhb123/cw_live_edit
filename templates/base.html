@@ -5,14 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Example{% endblock %}</title>
     <script src="https://unpkg.com/htmx.org@1.9.9"></script> 
+    <link rel="stylesheet" type="text/css" href="/styles.css">
 </head>
-<body hx-boost id="main-body" class="bg-slate-50 dark:bg-slate-900 w-screen text-slate-900 dark:text-emerald-200">
+<body id="main-body">
   <nav>
-    <h5>Navigation</h5>
-    <ul>
-      <li><a href="/">Home</a></li>
-      {# <li><a href="/">Home</a></li> #}
-    </ul>
+    <h1>{% block page_name %}Crossword{% endblock %}</h1>
+    <div>
+      <h5>Navigation</h5>
+      <ul>
+        <li><a href="/">Home</a></li>
+      </ul>
+    </div>
   </nav>
     <main>
       {% block content %}{% endblock %}

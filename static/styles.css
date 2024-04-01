@@ -1,0 +1,14 @@
+nav {
+    display: flex;
+    align-items: center;
+    height: 10vh;
+    /* justify-content: space-between; */
+}
+nav h1 {
+    min-width: 200px;
+}
+nav div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}

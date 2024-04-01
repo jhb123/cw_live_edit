@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 
 {% block title %}Puzzle{% endblock %}
+{% block page_name %}{{name}}{% endblock %}
 
 {% block content %}
 <script src="/crossword.js" type="module"></script> 
-<h1>{{name}}</h1>
 <crossword-grid src={{src}} style="position: relative"></crossword-grid>
 {% endblock %}
 

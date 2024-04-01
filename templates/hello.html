@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 
 {% block title %}Home{% endblock %}
+{% block page_name %}Home{% endblock %}
 
 {% block content %}
-<h1>Home</h1>
 <p>{{ data }}</p>
 <ul>
     {% for puzzle in puzzles%}
