@@ -192,6 +192,7 @@ class CrosswordGrid extends HTMLElement {
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
+                    cell.div.focus();
                     var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
                         node.style.background = "#ffffffff";
