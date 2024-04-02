@@ -19,6 +19,10 @@ class CrosswordGrid extends HTMLElement {
             shadowRoot.appendChild(template.content.cloneNode(true));
             this.grid = shadowRoot.getElementById('crossword')
 
+            this.invisible_input = document.createElement('input');
+            this.invisible_input.style.display = "none"
+            // this.grid.contentEditable = true;
+
             this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
             this.acrossHints = shadowRoot.getElementById('across-hints')
 
@@ -83,7 +87,7 @@ class CrosswordGrid extends HTMLElement {
 
                 this.drawFreshGrid()
                 this.grid.tabIndex = 0
-                this.grid.focus()
+                this.invisible_input.focus()
 
                 this.grid.addEventListener('keydown', (key) => {
                     if (this.activeClue===null) {
@@ -238,7 +242,7 @@ class CrosswordGrid extends HTMLElement {
 class Cell {
     constructor(cellData, scale) {
         let div = document.createElement('div');
-        div.tabIndex=0
+        // div.tabIndex=0
         // div.contentEditable = true;
         div.style.position = 'absolute';
         div.style.left = cellData.x * scale + '%';
