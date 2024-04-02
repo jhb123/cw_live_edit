@@ -85,6 +85,7 @@ class CrosswordGrid extends HTMLElement {
 
                 this.grid.addEventListener('keyup', (event) => {
                     if (this.activeClue===null) {
+                        
 
                     } else {
                         this.activeClue.highlight()
@@ -115,7 +116,7 @@ class CrosswordGrid extends HTMLElement {
 
                 this.grid.addEventListener('keypress', (event) => {
                     event.preventDefault();
-
+                    alert(event.which)
                     if (this.activeClue===null) {
 
                     } else {
