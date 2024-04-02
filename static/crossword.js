@@ -21,6 +21,7 @@ class CrosswordGrid extends HTMLElement {
 
             this.invisible_input = document.createElement('input');
             this.invisible_input.style.display = "none"
+            shadowRoot.appendChild(this.invisible_input)
             // this.grid.contentEditable = true;
 
             this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
