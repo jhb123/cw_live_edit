@@ -113,7 +113,7 @@ class CrosswordGrid extends HTMLElement {
                     }
                 })
 
-                this.grid.addEventListener('keydown', (event) => {
+                this.grid.addEventListener('keypress', (event) => {
                     event.preventDefault();
 
                     if (this.activeClue===null) {
