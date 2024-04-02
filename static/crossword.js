@@ -116,7 +116,10 @@ class CrosswordGrid extends HTMLElement {
 
                 this.grid.addEventListener('keypress', (event) => {
                     event.preventDefault();
-                    alert(event.which)
+                    var keyCode = event.keyCode || event.which;
+                    if (keyCode == 0 || keyCode == 229) { 
+                        keyCode = event.target.value.charAt(event.target.selectionStart - 1).charCodeAt();             
+                    }
                     if (this.activeClue===null) {
 
                     } else {
