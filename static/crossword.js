@@ -18,12 +18,6 @@ class CrosswordGrid extends HTMLElement {
             template.innerHTML = template_data;
             shadowRoot.appendChild(template.content.cloneNode(true));
             this.grid = shadowRoot.getElementById('crossword')
-
-            this.invisible_input = document.createElement('input');
-            this.invisible_input.style.display = "none"
-            shadowRoot.appendChild(this.invisible_input)
-            // this.grid.contentEditable = true;
-
             this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
             this.acrossHints = shadowRoot.getElementById('across-hints')
 
@@ -88,18 +82,15 @@ class CrosswordGrid extends HTMLElement {
 
                 this.drawFreshGrid()
                 this.grid.tabIndex = 0
-                this.invisible_input.focus()
 
-                this.grid.addEventListener('keydown', (key) => {
+                this.grid.addEventListener('keyup', (event) => {
                     if (this.activeClue===null) {
 
                     } else {
                         this.activeClue.highlight()
                         let cell;
-                        switch(key.key) {
+                        switch(event.key) {
                             case "Backspace":
-                                this.activeClue.getActiveCell().updateText(" ");
-                                this.ws.send(this.activeClue.getActiveCell().getCellData())
                                 cell = this.activeClue.backwardCellIterator.next().value;
                                 this.activeClue.setActiveCell(cell);
                                 break;
@@ -114,20 +105,35 @@ class CrosswordGrid extends HTMLElement {
                                 this.activeClue.setActiveCell(cell);
                                 break;
                             default:
-                                if (/^[a-zA-Z]$/.test(key.key)) {
-                                    this.activeClue.getActiveCell().updateText(key.key);
-                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
+                                if (/^[a-zA-Z]$/.test(event.key)) {
                                     cell = this.activeClue.forwardCellIterator.next().value;
                                     this.activeClue.setActiveCell(cell);
-                                }
-                                else {
-                                    cell = this.activeClue.getActiveCell()
-                                    this.activeClue.setActiveCell(cell);
-
                                 }
                         }
                     }
                 })
+
+                this.grid.addEventListener('keydown', (event) => {
+                    event.preventDefault();
+
+                    if (this.activeClue===null) {
+
+                    } else {
+                        switch(event.key) {
+                            case "Backspace":
+                                this.activeClue.getActiveCell().updateText(" ");
+                                this.ws.send(this.activeClue.getActiveCell().getCellData())
+                                break;
+                            default:
+                                if (/^[a-zA-Z]$/.test(event.key)) {
+                                    this.activeClue.getActiveCell().updateText(event.key);
+                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
+                                }
+                        }
+                    }
+                })
+
+
                 // this.grid.addEventListener('click', () => {
                 //     console.log("grid clicked")
                 // })
@@ -196,7 +202,7 @@ class CrosswordGrid extends HTMLElement {
             let key = `${cellData.x},${cellData.y}`;
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
-                cell.div.addEventListener('click', () => {
+                cell.input.addEventListener('click', () => {
                     var childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
                         node.style.background = "#ffffffff";
@@ -214,7 +220,7 @@ class CrosswordGrid extends HTMLElement {
 
 
 
-            this.grid.append(cellClass.div);
+            this.grid.append(cellClass.input);
             this.expandBackgroundElement(cellData);
         }
     }
@@ -230,34 +236,34 @@ class CrosswordGrid extends HTMLElement {
 
     expandBackgroundElement(cellData) {
         this.grid.style.height = this.grid.width
-        // if ((cellData.x + 1) * this.scale > this.grid.clientWidth) {
-        //     this.grid.style.width = (cellData.x + 1) * this.scale + "px";
-        // }
-        // if ((cellData.y + 1) * this.scale > this.grid.clientHeight) {
-        //     this.grid.style.height = (cellData.y + 1) * this.scale + "px";
-        // }
     }
 
 }
 
 class Cell {
     constructor(cellData, scale) {
-        let div = document.createElement('div');
+        let input = document.createElement('input');
         // div.tabIndex=0
         // div.contentEditable = true;
-        div.style.position = 'absolute';
-        div.style.left = cellData.x * scale + '%';
-        div.style.top = cellData.y * scale + '%';
-        div.style.width = scale + '%';
-        div.style.height = scale + '%';
-        div.style.background = "#ffffffff";
-        div.style.boxSizing = "border-box";
-        div.style.border = '1px solid black';
-        div.style.textAlign = "center"
-        div.style.verticalAlign = "middle"
+        input.addEventListener('paste', function(event) {
+            // Prevent the default paste behavior
+            event.preventDefault();
+        });
+        input.style.position = 'absolute';
+        input.style.left = cellData.x * scale + '%';
+        input.style.top = cellData.y * scale + '%';
+        input.style.width = scale + '%';
+        input.style.height = scale + '%';
+        input.style.background = "#ffffffff";
+        input.style.boxSizing = "border-box";
+        input.style.border = '1px solid black';
+        input.style.textAlign = "center"
+        input.style.verticalAlign = "middle"
+
+        input.classList.add("cell")
         
         this.text = ""
-        this.div = div;
+        this.input = input;
         this.cluesPartof = []
         this.clueIterator = this.cycleClue()
         this.coords = cellData
@@ -283,8 +289,7 @@ class Cell {
 
     updateText(text) {
         this.text = text
-        this.div.textContent = this.text 
-
+        this.input.value = this.text 
     }
 
     *cycleClue() {
@@ -305,7 +310,7 @@ class Cell {
     }
 
     handleHighlight() {
-        this.div.style.background = "#B6FFDA"
+        this.input.style.background = "#B6FFDA"
     }
 
 
@@ -337,12 +342,14 @@ class Clue {
         for(var i = 0; i < this.cells.length; ++i)  {
             if (this.cells[i] === cell) {
                 this.cellIdx = i
-                this.cells[this.cellIdx].div.style.background = "#FFF8B6"
+                this.cells[this.cellIdx].input.style.background = "#FFF8B6"
+                this.cells[this.cellIdx].input.focus()
                 return
             }
         }
         this.cellIdx = this.cells.length - 1
-        this.cells[this.cellIdx].div.style.background = "#FFF8B6"
+        this.cells[this.cellIdx].input.style.background = "#FFF8B6"
+        this.cells[this.cellIdx].input.focus()
     }
 
     *moveCellForward() {
