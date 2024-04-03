@@ -5,54 +5,60 @@ class CrosswordGrid extends HTMLElement {
         const shadowRoot = this.attachShadow({ mode: 'closed' })
 
         fetch(`/crossword.html`)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error("Failed to get crossword data")
-            }
-            return response.text();
-        })
-        .then( template_data => {
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Failed to get crossword data")
+                }
+                return response.text();
+            })
+            .then(template_data => {
 
-            const template = document.createElement('template');
-            
-            template.innerHTML = template_data;
-            shadowRoot.appendChild(template.content.cloneNode(true));
-            this.grid = shadowRoot.getElementById('crossword')
-            this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
-            this.acrossHints = shadowRoot.getElementById('across-hints')
+                const template = document.createElement('template');
 
-            this.downHintsParent = shadowRoot.getElementById('down-hint-container')
-            this.downHints = shadowRoot.getElementById('down-hints')
+                template.innerHTML = template_data;
+                shadowRoot.appendChild(template.content.cloneNode(true));
+                this.grid = shadowRoot.getElementById('crossword')
+                
+                this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
+                this.acrossHints = shadowRoot.getElementById('across-hints')
 
-            this.data = null;
+                this.downHintsParent = shadowRoot.getElementById('down-hint-container')
+                this.downHints = shadowRoot.getElementById('down-hints')
+                
+                this.keyboard = shadowRoot.getElementById('keyboard')
+                this.createKeyBoard()
 
-            this.downHintsData = []
-            this.acrossHintsData = []
 
-            this.scale = 30
-            this.cells = new Map();
-            this.activeClue = null;
-            
-            this.src = this.getAttribute('src') || ''
+                this.data = null;
 
-            let loc = window.location.host + this.src
+                this.downHintsData = []
+                this.acrossHintsData = []
 
-            this.ws = new WebSocket("ws://" + loc + '/live')
-    
-            // Connection opened
-            this.ws.addEventListener("open", (event) => {
-            this.ws.send("Hello Server!");
-            });
-            
-            // Listen for messages
-            this.ws.addEventListener("message", (event) => {
-                let message = JSON.parse(event.data);
-                this.handleUpdateTextFromServer(message)
-            });
+                this.scale = 30
+                this.cells = new Map();
+                this.activeClue = null;
 
-            this.fetchData().then(() => {
-            });
-        })
+                this.src = this.getAttribute('src') || ''
+
+                let loc = window.location.host + this.src
+
+                this.ws = new WebSocket("ws://" + loc + '/live')
+
+                // Connection opened
+                this.ws.addEventListener("open", (event) => {
+                    this.ws.send("Hello Server!");
+                });
+
+                // Listen for messages
+                this.ws.addEventListener("message", (event) => {
+                    let message = JSON.parse(event.data);
+                    this.handleUpdateTextFromServer(message)
+                });
+
+                this.fetchData().then(() => {
+                });
+            })
+
     }
 
     async fetchData() {
@@ -67,31 +73,31 @@ class CrosswordGrid extends HTMLElement {
                 this.data = data
                 let size = 0
                 for (let key in this.data["across"]) {
-                // this.data.across.forEach( clue => {
                     let clue = this.data["across"][key]
-                    clue.cells.forEach( coord => {
-                        if (coord.x > size){
+                    clue.cells.forEach(coord => {
+                        if (coord.x > size) {
                             size = coord.x
                         }
-                        if (coord.x > size){
+                        if (coord.x > size) {
                             size = coord.y
                         }
                     })
                 }
-                this.scale = 100/(size+1)
+                this.scale = 100 / (size + 1)
 
                 this.drawFreshGrid()
                 this.grid.tabIndex = 0
 
-                this.grid.addEventListener('keyup', (event) => {
-                    if (this.activeClue===null) {
-                        
+                this.grid.addEventListener('keyup', (key) => {
+                    if (this.activeClue === null) {
 
                     } else {
                         this.activeClue.highlight()
                         let cell;
-                        switch(event.key) {
+                        switch (key.key) {
                             case "Backspace":
+                                this.activeClue.getActiveCell().updateText(" ");
+                                this.ws.send(this.activeClue.getActiveCell().getCellData())
                                 cell = this.activeClue.backwardCellIterator.next().value;
                                 this.activeClue.setActiveCell(cell);
                                 break;
@@ -106,42 +112,20 @@ class CrosswordGrid extends HTMLElement {
                                 this.activeClue.setActiveCell(cell);
                                 break;
                             default:
-                                if (/^[a-zA-Z]$/.test(event.key)) {
+                                if (/^[a-zA-Z]$/.test(key.key)) {
+                                    this.activeClue.getActiveCell().updateText(key.key);
+                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
                                     cell = this.activeClue.forwardCellIterator.next().value;
                                     this.activeClue.setActiveCell(cell);
                                 }
-                        }
-                    }
-                })
+                                else {
+                                    cell = this.activeClue.getActiveCell()
+                                    this.activeClue.setActiveCell(cell);
 
-                this.grid.addEventListener('keypress', (event) => {
-                    event.preventDefault();
-                    var keyCode = event.keyCode || event.which;
-                    if (keyCode == 0 || keyCode == 229) { 
-                        keyCode = event.target.value.charAt(event.target.selectionStart - 1).charCodeAt();             
-                    }
-                    if (this.activeClue===null) {
-
-                    } else {
-                        switch(event.key) {
-                            case "Backspace":
-                                this.activeClue.getActiveCell().updateText(" ");
-                                this.ws.send(this.activeClue.getActiveCell().getCellData())
-                                break;
-                            default:
-                                if (/^[a-zA-Z]$/.test(event.key)) {
-                                    this.activeClue.getActiveCell().updateText(event.key);
-                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
                                 }
                         }
                     }
                 })
-
-
-                // this.grid.addEventListener('click', () => {
-                //     console.log("grid clicked")
-                // })
-
             })
     }
 
@@ -168,27 +152,27 @@ class CrosswordGrid extends HTMLElement {
         cell.updateText(new_cell.c)
     }
 
-    sortfn(a,b) {
+    sortfn(a, b) {
         const numA = parseInt(a.name);
-        const numB = parseInt(b.name);        
+        const numB = parseInt(b.name);
         if (numA < numB) {
             return -1;
         } else if (numA > numB) {
             return 1;
         } else {
             return a.name.localeCompare(b.name);
-        }    
+        }
     }
 
-    drawHints(){
+    drawHints() {
         this.acrossHintsData.sort(this.sortfn)
         this.downHintsData.sort(this.sortfn)
-        this.acrossHintsData.forEach( clue => {
+        this.acrossHintsData.forEach(clue => {
             let hintEl = this.createHintElement(clue.name, clue.value);
             this.acrossHints.appendChild(hintEl);
         });
 
-        this.downHintsData.forEach( clue => {
+        this.downHintsData.forEach(clue => {
             let hintEl = this.createHintElement(clue.name, clue.value);
             this.downHints.appendChild(hintEl);
         });
@@ -196,78 +180,99 @@ class CrosswordGrid extends HTMLElement {
     }
 
     handleIncomingClue(incomingClueName, clueDirection, incomingClueData) {
-        // let hintEl = this.createHintElement(incomingClueName, incomingClueData);
-        clueDirection.push({name: incomingClueName, value: incomingClueData["hint"]});
-
+        clueDirection.push({ name: incomingClueName, value: incomingClueData["hint"] });
         let clue = new Clue(incomingClueName);
-
         for (let incomingCellData in incomingClueData.cells) {
             let cellData = incomingClueData.cells[incomingCellData];
             let key = `${cellData.x},${cellData.y}`;
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
-                cell.input.addEventListener('click', () => {
+                cell.div.addEventListener('click', () => {
                     var childNodes = this.grid.childNodes;
+                    // console.log(childNodes)
                     childNodes.forEach(node => {
-                        node.style.background = "#ffffffff";
+                        if (node.nodeType === 1 && node.classList.contains("cell")) {
+                            node.style.background = "#ffffffff";
+                        }
                     });
                     this.activeClue = cell.handleClick();
                     this.activeClue.setActiveCell(cell)
                 });
-
                 this.cells.set(key, cell);
             }
             let cellClass = this.cells.get(key);
-
             clue.cells.push(cellClass);
             cellClass.cluesPartof.push(clue);
-
-
-
-            this.grid.append(cellClass.input);
-            this.expandBackgroundElement(cellData);
+            this.grid.append(cellClass.div);
         }
     }
 
     createHintElement(clueName, clueData) {
         let hintEl = document.createElement('tr');
         hintEl.innerHTML =
-        `<td class="clue-hint-num">${clueName}</td>
+            `<td class="clue-hint-num">${clueName}</td>
         <td class="clue-hint-text">${clueData}</td>`
         hintEl.classList.add("clue-hint");
         return hintEl;
     }
 
-    expandBackgroundElement(cellData) {
-        this.grid.style.height = this.grid.width
-    }
+    createKeyBoard() {
+        navigator.userAgent
+        console.log(navigator.userAgent)
+        
+        if (navigator.userAgent.includes("Mobile")) {
 
+            // let hints = document.getElementsByClassName("hint-container")
+            // for (el of hints) {
+            //    el.style.height = "calc(80vh - 500px)"
+            // }
+
+            this.acrossHintsParent.style.height = "calc(80vh - 500px)"
+            this.downHintsParent.style.height = "calc(80vh - 500px)"
+
+            var row = makeRow("qwertyuiop", this.keyboard);
+            var row = makeRow("asdfghjkl", this.keyboard);
+            var row = makeRow("zxcvbnm", this.keyboard);
+            
+            let button = document.createElement('button');
+            button.classList.add("keyboardKey");
+            button.innerHTML = "⌫";
+            button.addEventListener("click", (event) => {
+                button.dispatchEvent(new KeyboardEvent('keyup', {'key': "Backspace", "bubbles": true}));
+            })
+            row.append(button);
+
+            function makeRow(letters, keyboard) {
+                var row = document.createElement('div');
+                row.classList.add("keyboardRow");
+                for (let letter of letters) {
+                    let button = document.createElement('button');
+                    button.classList.add("keyboardKey");
+                    button.innerHTML = letter;
+                    button.addEventListener("click", (event) => {
+                        button.dispatchEvent(new KeyboardEvent('keyup', {'key': letter, "bubbles": true}));
+                    })
+                    row.append(button);
+                }
+                keyboard.append(row);
+                return row;
+            }
+        }
+    }
 }
 
 class Cell {
     constructor(cellData, scale) {
-        let input = document.createElement('input');
-        // div.tabIndex=0
-        // div.contentEditable = true;
-        input.addEventListener('paste', function(event) {
-            // Prevent the default paste behavior
-            event.preventDefault();
-        });
-        input.style.position = 'absolute';
-        input.style.left = cellData.x * scale + '%';
-        input.style.top = cellData.y * scale + '%';
-        input.style.width = scale + '%';
-        input.style.height = scale + '%';
-        input.style.background = "#ffffffff";
-        input.style.boxSizing = "border-box";
-        input.style.border = '1px solid black';
-        input.style.textAlign = "center"
-        input.style.verticalAlign = "middle"
+        let div = document.createElement('div');
+        div.classList.add("cell")
+        div.style.position = 'absolute';
+        div.style.left = cellData.x * scale + '%';
+        div.style.top = cellData.y * scale + '%';
+        div.style.width = scale + '%';
+        div.style.height = scale + '%';
 
-        input.classList.add("cell")
-        
         this.text = ""
-        this.input = input;
+        this.div = div;
         this.cluesPartof = []
         this.clueIterator = this.cycleClue()
         this.coords = cellData
@@ -277,8 +282,8 @@ class Cell {
 
     }
 
-    getCellData(){
-        return JSON.stringify({x: this.coords.x, y: this.coords.y, c: this.text })
+    getCellData() {
+        return JSON.stringify({ x: this.coords.x, y: this.coords.y, c: this.text })
     }
 
     handleClick() {
@@ -293,20 +298,21 @@ class Cell {
 
     updateText(text) {
         this.text = text
-        this.input.value = this.text 
+        this.div.textContent = this.text
+
     }
 
     *cycleClue() {
         var index = 0;
         while (true) {
-            if (this.cluesPartof.length === 0 ) {  
+            if (this.cluesPartof.length === 0) {
                 console.warn("cell is not part of any clue")
-                yield null;    
+                yield null;
             }
             else {
                 yield this.cluesPartof[index]
                 index++
-                if (index === this.cluesPartof.length){
+                if (index === this.cluesPartof.length) {
                     index = 0;
                 }
             }
@@ -314,7 +320,7 @@ class Cell {
     }
 
     handleHighlight() {
-        this.input.style.background = "#B6FFDA"
+        this.div.style.background = "#B6FFDA"
     }
 
 
@@ -333,7 +339,7 @@ class Clue {
     }
 
     highlight() {
-        this.cells.forEach( cell => {
+        this.cells.forEach(cell => {
             cell.handleHighlight()
         })
     }
@@ -343,38 +349,36 @@ class Clue {
     }
 
     setActiveCell(cell) {
-        for(var i = 0; i < this.cells.length; ++i)  {
+        for (var i = 0; i < this.cells.length; ++i) {
             if (this.cells[i] === cell) {
                 this.cellIdx = i
-                this.cells[this.cellIdx].input.style.background = "#FFF8B6"
-                this.cells[this.cellIdx].input.focus()
+                this.cells[this.cellIdx].div.style.background = "#FFF8B6"
                 return
             }
         }
         this.cellIdx = this.cells.length - 1
-        this.cells[this.cellIdx].input.style.background = "#FFF8B6"
-        this.cells[this.cellIdx].input.focus()
+        this.cells[this.cellIdx].div.style.background = "#FFF8B6"
     }
 
     *moveCellForward() {
         while (true) {
-            if (this.cellIdx === this.cells.length){
+            if (this.cellIdx === this.cells.length) {
                 yield this.cells[this.cellIdx]
             } else {
                 this.cellIdx++
                 yield this.cells[this.cellIdx]
-            }                
+            }
         }
     }
 
     *moveCellBackward() {
         while (true) {
-            if (this.cellIdx === 0){
+            if (this.cellIdx === 0) {
                 yield this.cells[this.cellIdx]
             } else {
                 this.cellIdx--
                 yield this.cells[this.cellIdx]
-            }                
+            }
         }
     }
 
