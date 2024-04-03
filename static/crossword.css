@@ -2,7 +2,7 @@
     position: relative;
     height: 450px;
     width: 450px;
-    display: flex;
+    /* display: flex; */
     aspect-ratio: 1 / 1;
     background: black;
     margin: 10px;
@@ -21,18 +21,19 @@
 }
 
 .hint-container{
-    position: relative;
+    overflow-y: scroll;
+    height: calc(80vh - 350px);
+    overflow-y: scroll;
     display: flex;
     flex-direction: column;
     width: 50%;
     padding: 0 10px;
     flex: 1;
-    height: 100%
 }
 
 @media (max-width: 764px) {
     .hint-container {
-        height: calc(85vh - 350px);;
+        flex-grow: 1;
     }    
 }
 
@@ -44,26 +45,26 @@
 
 
 .hints{
-    flex: 1;
     overflow-y: scroll;
 }
 
 .flex-container-big {
+    position: relative;
     display: flex;
     width: fit-content;
     flex-direction: column;
 }   
 
+.clues {
+    display: flex;
+}  
+
 @media (min-width: 764px) {
     .flex-container-big {
         display: flex;
         flex-direction: row;
-    }    
+    }  
 }
-
-.clues {
-    display: flex;
-}  
 
 .clue-hint-num {
     padding-left: 10px;
@@ -76,12 +77,34 @@
 }
 
 .cell {
-    color: transparent;
-    text-shadow: 0 0 0 black;
+    box-sizing: border-box;
+    background: white;
+    border: 1px solid black;
+    text-align: center;
+    justify-content: center;
+    align-items: center; 
+    display: flex;
+    font-size: 150%;
+    font-family: monospace;
 }
 
-.cell:focus {
-    outline: none;
-    background: red;
+#keyboard {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 150px;
+    /* background-color: black; */
+}
 
-  }
+.keyboardRow {
+    display: flex;
+    align-items: space-between;
+    height: 33%;
+}
+.keyboardKey {
+    flex-grow: 1;
+    margin: 2px 2px;
+    font-size: x-large;
+    /* display: flex; */
+}
