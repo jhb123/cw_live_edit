@@ -102,7 +102,7 @@ pub fn get_puzzle(id: &str) -> Result<Crossword, Error> {
     let data = get_puzzle_db(id).unwrap();
 
     let puzzle_path = puzzle_dir.join(format!("{}.json",data.name));
-
+    
     let mut file = File::open(puzzle_path)?;
     let mut data = String::new();
     file.read_to_string(&mut data)?;
@@ -115,8 +115,9 @@ pub fn save_puzzle(id: &str, cw: &Crossword) -> Result<(), Error> {
     let data = serde_json::to_string(cw)?;
 
     let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
+    let puzle_db_data = get_puzzle_db(id).unwrap();
 
-    let puzzle_path = puzzle_dir.join(format!("{id}.json") );
+    let puzzle_path = puzzle_dir.join(format!("{}.json",puzle_db_data.name));
     
     let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
         match File::create(&puzzle_path) {
