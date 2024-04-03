@@ -234,6 +234,14 @@ class CrosswordGrid extends HTMLElement {
             var row = makeRow("asdfghjkl", this.keyboard);
             var row = makeRow("zxcvbnm", this.keyboard);
             
+            let button = document.createElement('button');
+            button.classList.add("keyboardKey");
+            button.innerHTML = "⌫";
+            button.addEventListener("click", (event) => {
+                button.dispatchEvent(new KeyboardEvent('keyup', {'key': "Backspace", "bubbles": true}));
+            })
+            row.append(button);
+
             function makeRow(letters, keyboard) {
                 var row = document.createElement('div');
                 row.classList.add("keyboardRow");
@@ -241,6 +249,9 @@ class CrosswordGrid extends HTMLElement {
                     let button = document.createElement('button');
                     button.classList.add("keyboardKey");
                     button.innerHTML = letter;
+                    button.addEventListener("click", (event) => {
+                        button.dispatchEvent(new KeyboardEvent('keyup', {'key': letter, "bubbles": true}));
+                    })
                     row.append(button);
                 }
                 keyboard.append(row);
