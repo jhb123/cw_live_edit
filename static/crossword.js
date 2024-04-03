@@ -18,15 +18,14 @@ class CrosswordGrid extends HTMLElement {
                 template.innerHTML = template_data;
                 shadowRoot.appendChild(template.content.cloneNode(true));
                 this.grid = shadowRoot.getElementById('crossword')
-                // this.grid.contentEditable = true;
-                this.keyboard = shadowRoot.getElementById('keyboard')
-
+                
                 this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
                 this.acrossHints = shadowRoot.getElementById('across-hints')
 
                 this.downHintsParent = shadowRoot.getElementById('down-hint-container')
                 this.downHints = shadowRoot.getElementById('down-hints')
-
+                
+                this.keyboard = shadowRoot.getElementById('keyboard')
                 this.createKeyBoard()
 
 
@@ -190,8 +189,11 @@ class CrosswordGrid extends HTMLElement {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
                     var childNodes = this.grid.childNodes;
+                    // console.log(childNodes)
                     childNodes.forEach(node => {
-                        node.style.background = "#ffffffff";
+                        if (node.nodeType === 1 && node.classList.contains("cell")) {
+                            node.style.background = "#ffffffff";
+                        }
                     });
                     this.activeClue = cell.handleClick();
                     this.activeClue.setActiveCell(cell)
