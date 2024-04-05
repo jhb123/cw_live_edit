@@ -1,17 +1,19 @@
 .crossword{
     position: relative;
-    height: 450px;
-    width: 450px;
-    /* display: flex; */
+    height: 550px;
+    width: 550px;
     aspect-ratio: 1 / 1;
-    background: black;
-    padding: 10px;
+    background: black;    
+    box-sizing: border-box;
+    margin: 10px;
 }
 
 @media (max-width: 764px) {
     .crossword {
-        height: 350px;
-        width: 350px;
+        min-height: 350px;
+        min-width: 350px;
+        max-width: 350px;
+        max-height: 350px;
         margin: auto;
     }
     h2 {
@@ -21,47 +23,51 @@
 }
 
 .hint-container{
-    overflow-y: scroll;
-    height: calc(80vh - 350px);
-    overflow-y: scroll;
-    display: flex;
     flex-direction: column;
-    width: 50%;
     padding: 0 10px;
     flex: 1;
+    
 }
 
 @media (max-width: 764px) {
     .hint-container {
-        flex-grow: 1;
+        padding: 0 2px;
     }    
 }
-
-@media (min-width: 764px) {
-    .hint-container {
-        height: 450px;
-    }    
-}
-
 
 .hints{
-    overflow-y: scroll;
+    overflow-y: scroll;    
+    height: 88%;
 }
 
 .flex-container-big {
-    position: relative;
+    position: absolute;
     display: flex;
     width: fit-content;
     flex-direction: column;
+    max-height: 90vh;
+    box-sizing: border-box;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    top: 10vh;
+    
 }   
 
 .clues {
     display: flex;
-}  
+    position: relative;
+    flex:1;
+}
+
+@media (max-width: 764px) {
+    .clues {
+        height: calc(100% - 350px);
+    }
+}
 
 @media (min-width: 764px) {
     .flex-container-big {
-        display: flex;
         flex-direction: row;
     }  
 }
@@ -72,6 +78,13 @@
     vertical-align: top;
 }
 
+@media (max-width: 764px) {
+    .clue-hint-num {
+        padding-left: 0px;
+        padding-right: 5px;
+    }  
+}
+
 .clue-hint {
     padding-bottom: 10px;
 }
@@ -80,21 +93,29 @@
     box-sizing: border-box;
     background: white;
     border: 1px solid black;
-    text-align: center;
-    justify-content: center;
-    align-items: center; 
     display: flex;
+    /* padding: 1px; */
+
+}
+
+.cell-num {
+    font-size: 75%;
+    letter-spacing: -.02rem;
+    width: 0px;
+    /* transform: translate(-4px, -4px); */
+    /* right: -15px; */
+}
+
+.cell-text {
+    margin: auto;
     font-size: 150%;
     font-family: monospace;
 }
 
 #keyboard {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    position: relative;
     height: 150px;
-    /* background-color: black; */
+    z-index: 1;
 }
 
 .keyboardRow {
@@ -106,5 +127,4 @@
     flex-grow: 1;
     margin: 2px 2px;
     font-size: x-large;
-    /* display: flex; */
 }

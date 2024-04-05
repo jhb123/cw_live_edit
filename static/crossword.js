@@ -24,7 +24,8 @@ class CrosswordGrid extends HTMLElement {
 
                 this.downHintsParent = shadowRoot.getElementById('down-hint-container')
                 this.downHints = shadowRoot.getElementById('down-hints')
-                
+
+                this.clues_div = shadowRoot.getElementById('clues')
                 this.keyboard = shadowRoot.getElementById('keyboard')
                 this.createKeyBoard()
 
@@ -205,6 +206,8 @@ class CrosswordGrid extends HTMLElement {
             cellClass.cluesPartof.push(clue);
             this.grid.append(cellClass.div);
         }
+
+        clue.cells[0].cell_num.innerText = incomingClueName.slice(0,-1)
     }
 
     createHintElement(clueName, clueData) {
@@ -221,14 +224,23 @@ class CrosswordGrid extends HTMLElement {
         console.log(navigator.userAgent)
         
         if (navigator.userAgent.includes("Mobile")) {
+            this.clues_div.style.maxHeight = "calc(100% - 500px)"
 
-            // let hints = document.getElementsByClassName("hint-container")
-            // for (el of hints) {
-            //    el.style.height = "calc(80vh - 500px)"
-            // }
-
-            this.acrossHintsParent.style.height = "calc(80vh - 500px)"
-            this.downHintsParent.style.height = "calc(80vh - 500px)"
+            const makeRow = (letters, keyboard) => {
+                var row = document.createElement('div');
+                row.classList.add("keyboardRow");
+                for (let letter of letters) {
+                    let button = document.createElement('button');
+                    button.classList.add("keyboardKey");
+                    button.innerHTML = letter;
+                    button.addEventListener("click", (event) => {
+                        this.grid.dispatchEvent(new KeyboardEvent('keyup', {'key': letter}));
+                    })
+                    row.append(button);
+                }
+                keyboard.append(row);
+                return row;
+            }
 
             var row = makeRow("qwertyuiop", this.keyboard);
             var row = makeRow("asdfghjkl", this.keyboard);
@@ -238,25 +250,11 @@ class CrosswordGrid extends HTMLElement {
             button.classList.add("keyboardKey");
             button.innerHTML = "⌫";
             button.addEventListener("click", (event) => {
-                button.dispatchEvent(new KeyboardEvent('keyup', {'key': "Backspace", "bubbles": true}));
+                this.grid.dispatchEvent(new KeyboardEvent('keyup', {'key': "Backspace"}));
             })
             row.append(button);
 
-            function makeRow(letters, keyboard) {
-                var row = document.createElement('div');
-                row.classList.add("keyboardRow");
-                for (let letter of letters) {
-                    let button = document.createElement('button');
-                    button.classList.add("keyboardKey");
-                    button.innerHTML = letter;
-                    button.addEventListener("click", (event) => {
-                        button.dispatchEvent(new KeyboardEvent('keyup', {'key': letter, "bubbles": true}));
-                    })
-                    row.append(button);
-                }
-                keyboard.append(row);
-                return row;
-            }
+            
         }
     }
 }
@@ -277,9 +275,24 @@ class Cell {
         this.clueIterator = this.cycleClue()
         this.coords = cellData
 
+        let cell_num = document.createElement('div');
+        let cell_text = document.createElement('div');
+
+        this.cell_num = cell_num
+        this.cell_text = cell_text
+
+        this.cell_num.classList.add("cell-num")
+        this.cell_text.classList.add("cell-text")
+
+        this.div.appendChild(this.cell_num)
+        this.div.appendChild(this.cell_text)
         this.updateText(cellData.c)
 
+    }
 
+    updateText(text) {
+        this.text = text
+        this.cell_text.textContent = this.text
     }
 
     getCellData() {
@@ -296,11 +309,7 @@ class Cell {
         }
     }
 
-    updateText(text) {
-        this.text = text
-        this.div.textContent = this.text
 
-    }
 
     *cycleClue() {
         var index = 0;
