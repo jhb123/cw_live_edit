@@ -314,10 +314,18 @@ impl PuzzlePool {
                 info!("No channel found to route websocket client. Creating a new channel");
                 match PuzzleChannel::new(puzzle_num.clone()){
                     Ok(channel) => {
-                        let new_channel = Arc::new(Mutex::new(channel));
-                        self.pool.insert(puzzle_num, new_channel.clone());
-                        route_stream_to_puzzle(new_channel.clone(), stream)
+                        match channel {
+                            Some(channel) => {
+                                let new_channel = Arc::new(Mutex::new(channel));
+                                self.pool.insert(puzzle_num, new_channel.clone());
+                                route_stream_to_puzzle(new_channel.clone(), stream)
+                            },
+                            None => {
+                                Err(stream)
+                            }
+                        }
                     },
+                    
                     Err(error) => Err(stream),
                 }
             }
@@ -378,7 +386,7 @@ struct PuzzleChannel {
 }
 
 impl PuzzleChannel {
-    fn new(puzzle_num: String) -> Result<Self, Error> {
+    fn new(puzzle_num: String) -> Result<Option<Self>, Error> {
         let puzzle_num_clone = puzzle_num.clone();
 
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
@@ -388,8 +396,13 @@ impl PuzzleChannel {
         let clients: ThreadSafeSenderVector = Arc::new(Mutex::new(vec![]));
         let clients_clone = clients.clone();
 
-        let crossword = get_puzzle(&puzzle_num)?;
-        let crossword = Arc::new(Mutex::new(crossword));
+        let crossword = match get_puzzle(&puzzle_num)? {
+            Some(data) =>  Arc::new(Mutex::new(data)),
+            None => {
+                warn!("Cannot make a new puzzle channel as there is no crossword data");
+                return Ok(None)
+            } 
+        };
 
         let crossword_clone = crossword.clone();
 
@@ -442,13 +455,13 @@ impl PuzzleChannel {
 
         });
 
-        Ok(Self {
+        Ok(Some(Self {
             channel_wide_sender: Arc::new(sender),
             clients,
             terminate_sender,
             crossword,
             puzzle_num: puzzle_num_clone
-        })
+        }))
     }
 
     fn add_new_client(&mut self, sender: Arc<Sender<Vec<u8>>>) {
