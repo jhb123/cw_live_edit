@@ -1,8 +1,8 @@
-use std::{io::{self, BufReader, Error, Read}, net::TcpStream};
+use std::{io::{self, BufReader, Error, ErrorKind, Read}, net::TcpStream};
 
 use base64::{Engine as _, engine::general_purpose};
 use crypto::{digest::Digest, sha1::Sha1};
-use log::{info, warn};
+use log::{error, info, trace, warn};
 
 use crate::HttpRequest;
 
@@ -80,30 +80,30 @@ pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::R
         0xB..=0xF => OpCode::Reserved,
         _ => return Err(Error::new(io::ErrorKind::InvalidInput, format!("client send unexpected opcode: {opcode}")))
     };
-    info!("OpCode: {:?}",opcode);
+    trace!("OpCode: {:?}",opcode);
 
     let mut payload_len = (frame_header[1] & 0b0111_1111) as u64;
     let mut masking_key = vec![0;4];
 
-    info!("7 bit payload len: {}", payload_len);
+    trace!("7 bit payload len: {}", payload_len);
     match payload_len {
         0..=125 => {
             frame_header = vec![0; 4];
-            buf_reader.read_exact(&mut frame_header).unwrap();
-            masking_key = frame_header.try_into().unwrap();
+            buf_reader.read_exact(&mut frame_header)?;
+            masking_key = frame_header; 
         }
         126 => {
             frame_header = vec![0; 6];
-            buf_reader.read_exact(&mut frame_header).unwrap();
-            payload_len = websocket_content_len(&frame_header[0..2]).unwrap();
-            masking_key = frame_header[2..].try_into().unwrap();
+            buf_reader.read_exact(&mut frame_header)?;
+            payload_len = websocket_content_len(&frame_header[0..2])?;
+            masking_key.copy_from_slice(&frame_header[2..6]);
 
         }
         127 => {
             frame_header = vec![0; 12];
-            buf_reader.read_exact(&mut frame_header).unwrap();
-            payload_len = websocket_content_len(&frame_header[0..8]).unwrap();
-            masking_key = frame_header[8..].try_into().unwrap();
+            buf_reader.read_exact(&mut frame_header)?;
+            payload_len = websocket_content_len(&frame_header[0..8])?;
+            masking_key.copy_from_slice(&frame_header[8..12]);
         }
         128..=u64::MAX => {
             panic!("The 7 bits which encode the logic for the payload length cannot be greater than 127")
@@ -114,7 +114,7 @@ pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::R
     info!("masking key: {:02X?}", masking_key);
 
     let mut rec_msg = vec![0; payload_len as usize];
-    buf_reader.read_exact(&mut rec_msg).unwrap();
+    buf_reader.read_exact(&mut rec_msg)?;
 
     let decoded: Vec<u8> = rec_msg
         .iter()
@@ -128,7 +128,7 @@ pub fn decode_client_frame(buf_reader : &mut BufReader<&mut TcpStream>) -> io::R
 
 }
 
-fn websocket_content_len(data: &[u8]) -> Result<u64, &str>{
+fn websocket_content_len(data: &[u8]) -> Result<u64, Error>{
     let num_shifts = data.len();
     match num_shifts {
         0..=8 => {
@@ -139,23 +139,31 @@ fn websocket_content_len(data: &[u8]) -> Result<u64, &str>{
                 .fold(0,|acc, x| acc | x )
         )
         },
-        _ => Err("array too long.")
+        _ => Err(Error::from(ErrorKind::InvalidData))
     }
     // if num_shifts
     // 
 }
 
 
-pub fn websocket_handshake(req: &HttpRequest) -> Result<String, &str>{
+pub fn websocket_handshake(req: &HttpRequest) -> Result<String, Error>{
     let headers = match req {
         HttpRequest::Get { status_line: _, headers } => headers,
-        HttpRequest::Post { status_line: _, headers: _, body: _ } => return Err("Do not use post for this"),
+        HttpRequest::Post { status_line: _, headers: _, body: _ } => return {
+            error!("A post request was made to perform the websocket handshake, but this does not follow rfc6455.");
+            Err(Error::from(ErrorKind::Other))
+        },
     };
     
     let status_line = "HTTP/1.1 101 Switching Protocols";
-    info!("Response Status {}",status_line);
     
-    let sender_key = headers.get("Sec-WebSocket-Key").unwrap();
+    let sender_key = if let Some(key) = headers.get("Sec-WebSocket-Key") {
+        key
+    } else {
+        error!("While trying to find the client's sender key, we did not find Sec-WebSocket-Key in the Request's headers.");
+        return Err(Error::from(ErrorKind::InvalidData))
+    };
+
     let encoded_data = web_socket_accept(sender_key);
 
     let handshake = format!("{status_line}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {encoded_data}\r\n\r\n");
