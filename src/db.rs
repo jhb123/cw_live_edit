@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use rusqlite::{named_params, Connection};
 use serde::Serialize;
 
-use crate::crossword::{self, Crossword};
+use crate::crossword::Crossword;
 
 lazy_static! {
     static ref PUZZLE_DIR_PATH: String = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
