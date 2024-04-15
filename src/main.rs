@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{self, Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{info, warn};
@@ -70,9 +70,12 @@ fn main() {
         let stream = stream.unwrap();
         let api_arc_clone = Arc::clone(&api_arc);
         // let tera_arc_clone = Arc::clone(&tera_arc);
-        THREADPOOL.execute(|| {
+        match THREADPOOL.execute(|| {
             handle_connection(stream, api_arc_clone);
-        });
+        }) {
+            Ok(_) => info!("Succesfully handled connection"),
+            Err(e) => info!("Failed handled connection {0:?}", e),
+        }
     }
 }
 
@@ -269,15 +272,15 @@ struct AddPuzzleBody{
 
 fn puzzle_add_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) {
 
-    let status_line = match req {
-        HttpRequest::Get { status_line, .. } => todo!("Throw a useful error"),
-        HttpRequest::Post { status_line, headers, body} => {
+    let _status_line = match req {
+        HttpRequest::Get {  .. } => todo!("Throw a useful error"),
+        HttpRequest::Post { status_line: _, headers: _, body} => {
 
             let body = String::from_utf8(body.clone()).unwrap();
             let request_data: AddPuzzleBody  = serde_json::from_str(&body).unwrap();
 
 
-            create_new_puzzle(&request_data.name, &request_data.crossword);
+            let _ = create_new_puzzle(&request_data.name, &request_data.crossword);
 
             let response_status_line = "HTTP/1.1 200 Ok";
             info!("Response Status {}", response_status_line);
@@ -326,7 +329,7 @@ impl PuzzlePool {
                         }
                     },
                     
-                    Err(error) => Err(stream),
+                    Err(_) => Err(stream),
                 }
             }
         }
@@ -406,7 +409,7 @@ impl PuzzleChannel {
 
         let crossword_clone = crossword.clone();
 
-        THREADPOOL.execute(move || {
+        match THREADPOOL.execute(move || {
             loop {
                 if let Ok(should_break) = terminate_rec.recv_timeout(Duration::from_millis(10)){
                     if should_break {
@@ -453,7 +456,11 @@ impl PuzzleChannel {
             info!("finishing");
             PUZZLEPOOL.lock().unwrap().remove_channel(&puzzle_num);
 
-        });
+        })
+        {
+            Ok(_) => info!("Succesfully exceuted puzzle channel creation"),
+            Err(e) => info!("Failed to exceuted puzzle channel creation {0:?}", e),
+        }
 
         Ok(Some(Self {
             channel_wide_sender: Arc::new(sender),
@@ -494,11 +501,6 @@ impl PuzzleChannel {
         let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
         stream.write_all(response.as_bytes());
     }
-
-    fn send_puzzle_page(){
-        todo!()
-    }
-
 
 }
 
