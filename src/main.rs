@@ -655,6 +655,6 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>, stream: Tcp
     });
 
 
+    info!("Routed client to puzzle");
     Ok(stream_clone)
-    // Ok(*stream.lock().unwrap())
 }
