@@ -3,7 +3,7 @@ pub mod db;
 pub mod websockets;
 
 use std::{
-    collections::HashMap, fmt, io::{prelude::*, BufReader, Error, ErrorKind}, net::TcpStream, sync::{mpsc::{self, RecvError, SendError}, Arc, Mutex}, thread
+    collections::HashMap, fmt, io::{prelude::*, BufReader, Error, ErrorKind}, net::TcpStream, sync::{mpsc::{self}, Arc, Mutex}, thread
 };
 use log::{error, info, trace, warn};
 
