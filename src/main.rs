@@ -2,7 +2,7 @@ use cw_grid_server::{
     crossword::{Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -47,7 +47,6 @@ fn main() {
 
     let mut routes: RouteMapping = HashMap::new();
     routes.insert(r"^/$", index_handler);
-    routes.insert(r"^/hello$", hello_handler);
 
     routes.insert(r"^/crossword.js$", crossword_js);
     routes.insert(r"^/crossword.html$", crossword_html);
@@ -103,15 +102,25 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: TcpStream, api: Arc<Api>) {
+fn handle_connection(stream: TcpStream, api: Arc<Api>) {
     info!("handling connection");
-    let res = HttpRequest::new(&stream);
-    if res.is_ok() {
-        let req = res.unwrap();
-        api.handle_request(&req, stream);
-    } else {
-        stream.write_all("Not found".as_bytes()).unwrap()
-    }
+    match HttpRequest::new(&stream) {
+        Ok(req) => {
+            api.handle_request(&req, stream);
+        },
+        Err(e) => {
+            error!("Error handling request {e}");
+            api.bad_request(stream).unwrap_or_else(|err| {
+                match api.server_error(err.stream) {
+                    Ok(s) => return s,
+                    Err(e) => {
+                        warn!("Could not send the internal server error page to the client: {}",e.error);
+                        return e.stream
+                    }
+                }
+            });
+        }
+    };
 }
 
 #[derive(Clone)]
@@ -146,43 +155,82 @@ impl Api {
     }
 
     fn route_incoming_request(&self, incoming_route: &str, req: &HttpRequest, stream: TcpStream) {
-
-        // let stream = Arc::new(Mutex::new(stream));
-
+        trace!("Trying to match {} to a route in the API.", incoming_route);
 
         for (api_route, handler) in self.routes.iter() {
-            let reg = Regex::new(api_route).unwrap();
+            let reg = if let Ok(reg) = Regex::new(api_route) { reg } else {
+                error!("The api route defintion {:?} is not valid regex.", api_route);
+                if let Err(e) = self.server_error(stream) {
+                    warn!("Failed to send the client the server error page: {}", e.error);
+                };
+                return;
+            };
+            
             if reg.is_match(incoming_route) {
                 info!("Routing {incoming_route} to {api_route}");
                 
                 if let Err(err) = handler(req, Arc::clone(&self.tera), stream) {
                     error!("The route handler threw an error {}", err.error);
-                    server_error(Arc::clone(&self.tera), err.stream);
+                    if let Err(e) = self.server_error(err.stream) {
+                        warn!("Failed to send the client the server error page: {}", e.error);
+                    };
+                    return;
                 };
                 return 
             };
         }
-        warn!("Didn't match any routes");
+        trace!("{} Didn't match any routes", incoming_route);
 
-        missing(Arc::clone(&self.tera), stream);
+        if let Err(err) = missing(Arc::clone(&self.tera), stream) {
+            error!("No routes were found, but we missing route handler threw an error {}", err.error);
+            if let Err(e) = self.server_error(err.stream) {
+                warn!("Failed to send the client the server error page: {}", e.error);
+            };
+            return;
+        }
     }
     
     fn register_routes(routes: RouteMapping, tera: Arc<Tera>) -> Self {
         Self { routes, tera }
     }
-}
 
-fn hello_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
-    thread::sleep(Duration::from_secs(5));
-    let status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", status_line);
-    let mut context = tera::Context::new();
-    context.insert("data", "Hello");
-    let contents = tera.render("hello.html", &context).unwrap();
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-    Ok(stream)
+    fn bad_request(&self, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+        let status_line = "HTTP/1.1 400 Not Found";
+        info!("Response Status {}", status_line);
+        let mut context = tera::Context::new();
+        context.insert("status", "400");
+        let contents = match self.tera.render("error.html", &context) {
+            Ok(contents) => contents,
+            Err(error) => {
+                error!("Could not render the bad request page: {}", error);
+                return Err(HandlerError::new(stream, Error::new(ErrorKind::InvalidData, format!("Could not render the bad request page: {error}"))))
+            },
+        };
+        let length = contents.len();
+        let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+        match stream.write_all(response.as_bytes()) {
+            Ok(_) => Ok(stream),
+            Err(error) => Err(HandlerError::new(stream, error))
+        }
+    }
+
+    fn server_error(&self, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+        let status_line = "HTTP/1.1 500 Internal Server Error";
+        info!("Response Status {}", status_line);
+        let mut context = tera::Context::new();
+        context.insert("status", "500");
+        let contents = self.tera.render("error.html", &context).unwrap_or_else(|err| {
+            error!("Could not render error template: {0}", err);
+            "500 - Internal Server Error".to_string()
+        });
+        let length = contents.len();
+        let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+        match stream.write_all(response.as_bytes()) {
+            Ok(_) => Ok(stream),
+            Err(error) => Err(HandlerError::new(stream, error))
+        }
+    }
+
 }
 
 fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
@@ -198,21 +246,12 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
     let contents = tera.render("hello.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-    Ok(stream)
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
 }
 
-fn server_error(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
-    let status_line = "HTTP/1.1 500 Internal Server Error";
-    info!("Response Status {}", status_line);
-    let mut context = tera::Context::new();
-    context.insert("status", "500");
-    let contents = tera.render("error.html", &context).unwrap();
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-    Ok(stream)
-}
 
 fn missing(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
     let status_line = "HTTP/1.1 404 Not Found";
@@ -222,8 +261,10 @@ fn missing(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerE
     let contents = tera.render("error.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-    Ok(stream)
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
 }
 
 fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
@@ -248,8 +289,10 @@ fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) ->
     let mut contents = String::new();
     let length = file.read_to_string(&mut contents).unwrap();
     let response = format!("{status_line}\r\nContent-Length: {length}\nContent-Type: {content_type}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-    Ok(stream)
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
 }
 
 fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
@@ -273,8 +316,10 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
     let contents = tera.render("crossword.html", &context).unwrap();
     let length = contents.len();
     let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    stream.write_all(response.as_bytes()).unwrap();
-    Ok(stream)
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
 }
 
 fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) -> Result<TcpStream, HandlerError>  {
@@ -304,7 +349,10 @@ fn puzzle_handler_live(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStrea
     let puzzle_num = caps["num"].to_string();
 
     let handshake = websocket_handshake(req).unwrap();
-    stream.write_all(handshake.as_bytes()).unwrap();
+
+    if let Err(error) = stream.write_all(handshake.as_bytes()) {
+        return Err(HandlerError::new(stream, error))
+    }
 
     // pass info into the puzzle pool so that this request can be routed to the correct puzzle channel
     match PUZZLEPOOL.lock().unwrap().connect_client(puzzle_num, stream) {
@@ -342,8 +390,10 @@ fn puzzle_add_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream
             let contents = serde_json::to_string(&request_data.crossword).unwrap();
             let length = contents.len();
             let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-            stream.write_all(response.as_bytes()).unwrap();
-            return Ok(stream);
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => return Ok(stream),
+                Err(error) => return Err(HandlerError::new(stream, error))
+            }
 
         },
     };
