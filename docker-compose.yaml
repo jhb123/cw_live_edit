@@ -7,11 +7,17 @@ services:
     environment:
       PUZZLE_PATH: /puzzles
       PUZZLE_PORT: 5051
-      RUST_LOG: info
+      RUST_LOG: warn
     volumes:
       - puzzle_data:/puzzles
     ports:
       - "5051:5051"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
 volumes:
   puzzle_data:

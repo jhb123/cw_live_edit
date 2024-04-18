@@ -15,7 +15,7 @@ use tera::Tera;
 
 lazy_static! {
     static ref PUZZLEPOOL: Mutex<PuzzlePool> = Mutex::new(PuzzlePool::new());
-    static ref THREADPOOL: ThreadPool = ThreadPool::new(4);
+    static ref THREADPOOL: ThreadPool = ThreadPool::new(64);
 }
 
 struct HandlerError {
@@ -80,7 +80,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    info!("Started on: http://{addr}");
+    println!("Started on: http://{addr}");
 
     for stream in listener.incoming() {
         info!("Stream received");
