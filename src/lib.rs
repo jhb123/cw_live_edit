@@ -54,6 +54,7 @@ pub struct StatusLine {
 
 impl StatusLine {
     fn new(status_line: &str) -> Result<Self, Error> {
+        trace!("Creating status line from '{}'",status_line);
         let parts: Vec<_> = status_line.split(" ").collect();
 
         let verb = match HttpVerb::new(parts[0]){
