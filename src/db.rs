@@ -1,10 +1,10 @@
-use std::{env, fs::{self, DirEntry, File}, io::{Error, Read, Write}, path::Path};
-use log::{error, info};
+use std::{env, fs::{self, File}, io::{Error, ErrorKind, Read, Write}, path::Path};
+use log::{error, info, warn};
 use lazy_static::lazy_static;
 use rusqlite::{named_params, Connection};
 use serde::Serialize;
 
-use crate::crossword::{self, Crossword};
+use crate::crossword::Crossword;
 
 lazy_static! {
     static ref PUZZLE_DIR_PATH: String = env::var("PUZZLE_PATH").unwrap_or("./puzzles".to_string());
@@ -14,7 +14,6 @@ lazy_static! {
     };
 }
 
-
 pub fn create_puzzle_dir() -> Result<(),Error> {
     fs::create_dir_all(&*PUZZLE_DIR_PATH)?;
     Ok(())
@@ -22,7 +21,7 @@ pub fn create_puzzle_dir() -> Result<(),Error> {
 
 pub fn init_db() -> Result<(), rusqlite::Error> {
 
-    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     info!("initialising database");
     conn.execute(
@@ -37,7 +36,7 @@ pub fn init_db() -> Result<(), rusqlite::Error> {
 
 pub fn add_puzzle_to_db(name: &str, file: &str) -> Result<(), rusqlite::Error> {
     info!("inserting data");
-    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     let mut stmt = conn.prepare(
         "insert into puzzles (name, file) values (:name, :file)"
@@ -54,107 +53,162 @@ pub struct PuzzleDbData {
     file: String
 }
 
+impl PuzzleDbData {
+
+    fn from_row(row: &rusqlite::Row<'_>) ->Result<PuzzleDbData, rusqlite::Error> {
+        let id = match row.get(0){
+            Ok(val) => val,
+            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
+                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'ID' at Column index {0}, but {0} is an invalid Column Index", idx);
+                return Err(rusqlite::Error::InvalidColumnIndex(idx))
+            },
+            Err(err) => {
+                error!("{0}",err);
+                return Err(err)
+            }
+        };
+        let name = match row.get(1){
+            Ok(val) => val,
+            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
+                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'name' at Column index {0}, but {0} is an invalid Column Index", idx);
+                return Err(rusqlite::Error::InvalidColumnIndex(idx))
+            },
+            Err(err) => {
+                error!("{0}",err);
+                return Err(err)
+            }
+        };
+        let file = match row.get(2){
+            Ok(val) => val,
+            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
+                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'file' at Column index {0}, but {0} is an invalid Column Index", idx);
+                return Err(rusqlite::Error::InvalidColumnIndex(idx))
+            },
+            Err(err) => {
+                error!("{0}",err);
+                return Err(err)
+            }
+        };
+        Ok(PuzzleDbData {id, name, file})
+    }
+}
+
 pub fn get_all_puzzle_db() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
     info!("all data:");
-    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     let mut stmt = conn.prepare(
         "select id, name, file from puzzles"
     )?;
     
-    let db_data_iter = stmt.query_map([], |row| {
-        Ok(PuzzleDbData {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            file: row.get(2)?,
-        })
-    })?;
+    let rows = stmt.query_map([], |row| {
+        PuzzleDbData::from_row(row)
+    })?
+    .collect();
 
-    let data: Vec<PuzzleDbData> = db_data_iter.map(|x| x.unwrap()).collect();
-    Ok(data)
+   rows
 }
 
 pub fn get_puzzle_db(id: &str) -> Result<PuzzleDbData, rusqlite::Error> {
-    info!("all data:");
-    let conn = Connection::open(&*PUZZLE_DB_PATH).unwrap();
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     let mut stmt = conn.prepare(
         "select id, name, file from puzzles where id=:id"
     )?;
     
-    let db_data_iter = stmt.query_map(&[(":id", id)], |row| {
-        Ok(PuzzleDbData {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            file: row.get(2)?,
-        })
-    })?;
+    let rows = stmt.query_row(&[(":id", id)], |row| {
+        PuzzleDbData::from_row(row)
+    });
 
-    let data: PuzzleDbData = db_data_iter.map(|x| x.unwrap()).next().unwrap();
-    Ok(data)
+    rows
+    
 }
 
 
-pub fn get_puzzle(id: &str) -> Result<Crossword, Error> {
+pub fn get_puzzle(id: &str) -> Result<Option<Crossword>, Error> {
 
     let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
 
-    let data = get_puzzle_db(id).unwrap();
-
-    let puzzle_path = puzzle_dir.join(format!("{}.json",data.name));
-    
-    let mut file = File::open(puzzle_path)?;
-    let mut data = String::new();
-    file.read_to_string(&mut data)?;
-    let crossword: Crossword = serde_json::from_str(&data)?;
-    Ok(crossword)
+    match get_puzzle_db(id) {
+        Ok(data) => {
+            let puzzle_path = puzzle_dir.join(format!("{}.json",data.name));
+            let mut file = File::open(puzzle_path)?;
+            let mut data = String::new();
+            file.read_to_string(&mut data)?;
+            let crossword: Crossword = serde_json::from_str(&data)?;
+            Ok(Some(crossword))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            warn!("No crossword with ID {id} exists.");
+            Ok(None)
+        },
+        Err(e) => {
+            Err(Error::new(ErrorKind::Other, format!("Database error: {}", e)))
+        }
+    }
 }
 
 
 pub fn save_puzzle(id: &str, cw: &Crossword) -> Result<(), Error> {
-    let data = serde_json::to_string(cw)?;
 
     let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
-    let puzle_db_data = get_puzzle_db(id).unwrap();
 
-    let puzzle_path = puzzle_dir.join(format!("{}.json",puzle_db_data.name));
-    
-    let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
-        match File::create(&puzzle_path) {
-            Ok(file) => file,
-            Err(e) => panic!("Problem creating file {}", e)
+    match get_puzzle_db(id) {
+        Ok(puzzle_meta_data) => {
+            let puzzle_path = puzzle_dir.join(format!("{}.json",puzzle_meta_data.name));
+                
+            let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
+                match File::create(&puzzle_path) {
+                    Ok(file) => file,
+                    Err(e) => panic!("Problem creating file {}", e)
+                }
+            });
+            file.set_len(0)?;
+            info!("writing crossword to {:?}", file);
+            let cw_data = serde_json::to_string(cw)?;
+            File::write_all(&mut file, cw_data.as_bytes())?;
+            Ok(())
         }
-    });
-    
-    file.set_len(0)?;
-    info!("writing crossword to {:?}", file);
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            warn!("No crossword with ID {id} exists.");
+            Err(Error::new(ErrorKind::NotFound, format!("No crossword with ID {id} exists.")))
+        },
+        Err(e) => {
+            Err(Error::new(ErrorKind::Other, format!("Database error: {}", e)))
+        }
+    }
 
-    File::write_all(&mut file, data.as_bytes())?;
-
-    Ok(())
 }
 
 pub fn create_new_puzzle(id: &str, cw: &Crossword) -> Result<(), Error> {
+
     let data = serde_json::to_string(cw)?;
 
     let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
 
     let puzzle_path = puzzle_dir.join(format!("{id}.json") );
     
-    let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
-        match File::create(&puzzle_path) {
-            Ok(file) => file,
-            Err(e) => panic!("Problem creating file {}", e)
+    let puzzle_path_str = puzzle_path.to_str().ok_or_else(
+        || Error::new(ErrorKind::Other, format!("Path must be valid utf-8"))
+    )?;
+
+    let mut file = match File::options().write(true).create(true).open(&puzzle_path) {
+        Ok(file) => {
+            file
+        },
+        Err(ref e) if e.kind() == ErrorKind::PermissionDenied => {
+            return Err(Error::new(ErrorKind::PermissionDenied, format!("Cannot save puzzle data to file. Ensure you have permission to create files.")))
         }
-    });
+        Err(e) => {
+            return Err(e)
+        }
+    };
     
     file.set_len(0)?;
     info!("writing crossword to {:?}", file);
-
     File::write_all(&mut file, data.as_bytes())?;
 
-    add_puzzle_to_db(id, puzzle_path.to_str().unwrap()).unwrap();
+    add_puzzle_to_db(id, puzzle_path_str).map_err(|e| Error::new(ErrorKind::Other, format!("Database error: {}", e)))?;
 
-    save_puzzle(id, &cw).unwrap();
     Ok(())
 }

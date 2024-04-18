@@ -3,9 +3,11 @@ pub mod db;
 pub mod websockets;
 
 use std::{
-    collections::HashMap, fmt, io::{prelude::*, BufReader}, net::TcpStream, sync::{mpsc, Arc, Mutex}, thread
+    collections::HashMap, fmt, io::{prelude::*, BufReader, Error, ErrorKind}, net::TcpStream, sync::{mpsc::{self}, Arc, Mutex}, thread
 };
-use log::{info, warn};
+use log::{error, info, trace, warn};
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
 #[derive(Debug)]
 pub enum HttpRequest {
@@ -51,14 +53,15 @@ pub struct StatusLine {
 }
 
 impl StatusLine {
-    fn new(status_line: &str) -> Result<Self, &str> {
+    fn new(status_line: &str) -> Result<Self, Error> {
+        trace!("Creating status line from '{}'",status_line);
         let parts: Vec<_> = status_line.split(" ").collect();
 
         let verb = match HttpVerb::new(parts[0]){
             Ok(val) => val,
             Err(_err) => {
                 warn!("status line:{}. Cannot process this request", status_line);
-                return Err(status_line)
+                return Err(Error::from(ErrorKind::InvalidData))
             },
         };
         let protocol = parts[2].trim().to_string();
@@ -76,25 +79,24 @@ impl fmt::Display for StatusLine {
 }
 
 impl HttpRequest {
-    pub fn new(mut stream: &TcpStream) -> Result<Self, String> {
+    pub fn new(mut stream: &TcpStream) -> Result<Self, Error> {
         let mut buf_reader = BufReader::new(&mut stream);
         let mut start_line = String::new();
 
-        let _ = match buf_reader.read_line(&mut start_line) {
-            Ok(line) => line,
-            Err(..) => return Err("Failed to read start line".to_string()),
-        };
+        buf_reader.read_line(&mut start_line)?;
         
         let status_line = StatusLine::new(&start_line)?;
     
         match status_line.verb {
             HttpVerb::Get  => {
-                let headers = Self::process_headers(&mut buf_reader);
-                Ok( Self::Get{status_line, headers} )
+                match Self::process_headers(&mut buf_reader) {
+                    Ok(headers) => Ok( Self::Get{status_line, headers} ),
+                    Err(e) => Err(e)
+                }
             },
             HttpVerb::Post  => {
-                let headers = Self::process_headers(&mut buf_reader);
-                let len = headers["Content-Length"].parse::<usize>().unwrap();
+                let headers = Self::process_headers(&mut buf_reader)?;
+                let len = headers["Content-Length"].parse::<usize>().map_err(|err| Error::new(ErrorKind::InvalidData, err))?;
                 let mut buf = vec![0; len];
                 let _ = buf_reader.read_exact(&mut buf);
                 Ok( Self::Post{status_line, headers, body:buf} )
@@ -102,21 +104,23 @@ impl HttpRequest {
         }
     }
    
-    fn process_headers(req: &mut BufReader<&mut &TcpStream>) -> HashMap<String,String> {
+    fn process_headers(req: &mut BufReader<&mut &TcpStream>) -> Result<HashMap<String,String>, Error>{
         let headers = req
             .lines()
-            .map(|result| result.unwrap())
-            .take_while(|line| !line.is_empty())
-            .collect::<Vec<String>>()
-            .into_iter()
-            .map(|x: String| {
-                let mut s = x.splitn(2,": ");
-                let first = s.next().unwrap().to_string();
-                let second = s.next().unwrap().to_string();
-                (first,second)
+            .take_while(|res| match res {
+                Ok(line) => !line.is_empty(),
+                Err(_) => false
             })
-            .collect();
-        return headers;
+            .map(|line_result| {
+                let line = line_result?;
+                let mut s = line.splitn(2,": ");
+                let first = s.next().ok_or_else(|| Error::new(ErrorKind::InvalidData, format!("Attempted to convert the line {line} header did not have a first part. Attempted to split at the `:` character")))?.to_string();
+                let second = s.next().ok_or_else(|| Error::new(ErrorKind::InvalidData, format!("Attempted to convert the line {line} header did not have a second part. Attempted to split at the `:` character")))?.to_string();
+                Ok((first,second))
+            })
+            .collect::<Result<HashMap<String, String>, Error>>()?;
+
+        return Ok(headers);
     }
 }
 
@@ -166,27 +170,62 @@ struct Worker {
     // receiver: mpsc::Receiver<Job>,
 }
 
-type Job = Box<dyn FnOnce() + Send + 'static>;
-
-
 impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>)-> Worker{
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>)-> Worker {
         let thread = thread::spawn( move || loop {
-            let job = receiver.lock().unwrap().recv().unwrap();
-            info!("Worker {} received Job, executing", id);
-            job();
-            info!("Worker {} finished Job, freeing", id);
+
+
+            let recv_result = receiver.lock().unwrap_or_else(|e| {
+                warn!("Acquired a lock on the receiver mutex, but the last user of this mutex left it in a a poisoned state.");
+                e.into_inner()
+            } ).recv();
+
+            match recv_result  {
+                Ok(job) => job(),
+                Err(e) => {
+                    error!("There is no reciever anymore, so worker thread will begin ending. Full error: {e}");
+                    break;
+                },
+            }
         });
 
-        info!("Creating worker: {}",id);
+        trace!("Creating worker: {}",id);
         Worker { id, thread : Some(thread) }
     }
+}
+
+            // job()
+            // let mutex_guard = match receiver.lock() {
+            //     Ok(l) => l,
+            //     Err(e) => {
+            //         error!("Failed to aquire a lock on worker {0}. Error: {1}", id, e);
+            //         continue;
+            //     }
+            // };
+
+            // match mutex_guard.recv() {
+            //     Ok(job) => {
+            //         trace!("Worker {} received Job, executing", id);
+            //         job();
+            //         trace!("Worker {} finished Job, freeing", id);
+            //     },
+            //     Err(e) => {
+            //         error!("The Threadpool's sender has disconnected: {0}. No more messages can ever be sent to the thread pool", e);
+            //         break;
+            //     }
+            // };
+#[derive(Debug)]
+pub enum ThreadPoolError {
+    NoReceiver,
+    NoSender,
 }
 
 impl ThreadPool {
 
     pub fn new(size: usize)-> ThreadPool{
         assert!(size > 0);
+        info!("Creating a threadpool with {size} workers.");
+
         let (sender, receiver) = mpsc::channel();
 
         let receiver = Arc::new(Mutex::new(receiver));
@@ -199,12 +238,27 @@ impl ThreadPool {
         ThreadPool {workers, sender: Some(sender)}
     }
 
-        pub fn execute<F>(&self, f: F) where F: FnOnce() + Send + 'static {
+        pub fn execute<F>(&self, f: F)-> Result<(),ThreadPoolError> where F: FnOnce() + Send + 'static {
             let job = Box::new(f);
 
-            self.sender.as_ref().unwrap().send(job).unwrap();    
-    }
+            match self.sender.as_ref() {
+                Some(sender) => {
+                    match sender.send(job) {
+                        Ok(_) => return Ok(()),
+                        Err(_) => {
+                            error!("The reciever for this sender has been deallocated.");
+                            return Err(ThreadPoolError::NoReceiver)
+                        }
+                    }
+                },
+                None => {
+                    error!("Could not send job to any workers because the threadpool's sender is no more.");
+                    return Err(ThreadPoolError::NoSender)
+                }
+            };  
 
+        }
+    
 }
 
 impl Drop for ThreadPool {
@@ -213,7 +267,9 @@ impl Drop for ThreadPool {
             println!("Shutting down worker {}", worker.id);
 
             if let Some(thread) = worker.thread.take() {
-                thread.join().unwrap();
+                if let Err(_) = thread.join() {
+                    warn!("The threadpool was dropped, but one of the workers paniced while joining.");
+                }
             }
 
         }
