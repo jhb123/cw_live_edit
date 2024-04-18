@@ -15,7 +15,7 @@ use tera::Tera;
 
 lazy_static! {
     static ref PUZZLEPOOL: Mutex<PuzzlePool> = Mutex::new(PuzzlePool::new());
-    static ref THREADPOOL: ThreadPool = ThreadPool::new(64);
+    static ref THREADPOOL: ThreadPool = ThreadPool::new(32);
 }
 
 struct HandlerError {
@@ -685,7 +685,10 @@ impl PuzzleChannel {
         })
         {
             Ok(_) => info!("Succesfully exceuted puzzle channel creation"),
-            Err(e) => info!("Failed to exceuted puzzle channel creation {0:?}", e),
+            Err(e) => {
+                info!("Failed to exceuted puzzle channel creation {0:?}", e);
+                return Err(Error::new(ErrorKind::Other, format!("{:?}", e)))
+            },
         }
 
         let tera = Tera::new("templates/**/*").unwrap_or_else(|err| {
@@ -819,7 +822,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
     // let mut set = HashMap::new();
 
     let stream_writer = Arc::clone(&stream_arc);
-    thread::spawn( move || {
+    match THREADPOOL.execute( move || {
         loop {
             if let Ok(should_break) = terminate_rec.recv_timeout(Duration::from_millis(10)){
                 if should_break {
@@ -861,9 +864,15 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
             e.into_inner()
         }).remove_client(&sender_clone);
 
-    });
+    }) {
+        Ok(_) => info!("Succesfully set up receiver"),
+        Err(error) => {
+            info!("Failed to exceuted puzzle channel creation {0:?}", error);
+            return Err(HandlerError::new(stream_clone, Error::new(ErrorKind::Other, format!("Failed to exceuted puzzle channel creation {0:?}", error))))
+        },
+    }
 
-    thread::spawn(move || {
+    match THREADPOOL.execute(move || {
         loop {
             {
                 let mut guard = match stream_arc.lock() {
@@ -917,7 +926,13 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
         // puzzle_channel;
         info!("finished reading websocket from client");
 
-    });
+    }) {
+        Ok(_) => info!("Succesfully set up receiver"),
+        Err(error) => {
+            info!("Failed to exceuted puzzle channel creation {0:?}", error);
+            return Err(HandlerError::new(stream_clone, Error::new(ErrorKind::Other, format!("Failed to exceuted puzzle channel creation {0:?}", error))))
+        },
+    }
 
 
     info!("Routed client to puzzle");
