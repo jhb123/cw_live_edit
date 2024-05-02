@@ -43,7 +43,7 @@ class CrosswordGrid extends HTMLElement {
 
                 let loc = window.location.host + this.src
 
-                this.ws = new WebSocket("ws://" + loc + '/live')
+                this.ws = new WebSocket("wss://" + loc + '/live')
 
                 // Connection opened
                 this.ws.addEventListener("open", (event) => {
