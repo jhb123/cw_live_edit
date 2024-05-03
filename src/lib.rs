@@ -1,6 +1,7 @@
 pub mod crossword;
 pub mod db;
 pub mod websockets;
+pub mod response;
 
 use std::{
     collections::HashMap, fmt, io::{prelude::*, BufReader, Error, ErrorKind}, net::TcpStream, sync::{mpsc::{self}, Arc, Mutex}, thread
@@ -276,37 +277,3 @@ impl Drop for ThreadPool {
     }
 }
 
-#[allow(dead_code)]
-enum Content {
-    ApplicationOctetStream {content: Vec::<u8>},
-    TextPlain {content: String},
-    TextCss {content: String},
-    TextHtml {content: String},
-    TextJavascript {content: String}
-}
-
-#[allow(dead_code)]
-pub struct Response {
-    status_line: String,
-    headers: HashMap<String,String>,
-    content: Content
-}
-
-pub trait Writable {
-    fn write(&self) -> Vec::<u8>;
-}
-
-impl Response  {
-
-    #[allow(dead_code)]
-    fn new<T>(content: T, _extra_headers: Option<HashMap<String,String>>) -> Self where T: ExactSizeIterator{
-        let status_line = "HTTP/1.1 200 Ok";
-
-        let length = content.len();
-        let headers: HashMap<String, String> = HashMap::from([("Content-Length".to_string(), format!("{length}"))]);
-
-        let c = Content::TextCss { content: "123".to_owned() };
-        Response {status_line: status_line.to_string(), headers, content: c }
-    }
-
-}
