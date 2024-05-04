@@ -158,13 +158,11 @@ impl fmt::Display for HttpRequest {
     }
 }
 
-#[allow(dead_code)]
 pub struct ThreadPool{
     workers: Vec<Worker>,
     sender: Option<mpsc::Sender<Job>>,
 }
 
-#[allow(dead_code)]
 struct Worker {
     id: usize,
     thread: Option<thread::JoinHandle<()>>
@@ -195,26 +193,6 @@ impl Worker {
     }
 }
 
-            // job()
-            // let mutex_guard = match receiver.lock() {
-            //     Ok(l) => l,
-            //     Err(e) => {
-            //         error!("Failed to aquire a lock on worker {0}. Error: {1}", id, e);
-            //         continue;
-            //     }
-            // };
-
-            // match mutex_guard.recv() {
-            //     Ok(job) => {
-            //         trace!("Worker {} received Job, executing", id);
-            //         job();
-            //         trace!("Worker {} finished Job, freeing", id);
-            //     },
-            //     Err(e) => {
-            //         error!("The Threadpool's sender has disconnected: {0}. No more messages can ever be sent to the thread pool", e);
-            //         break;
-            //     }
-            // };
 #[derive(Debug)]
 pub enum ThreadPoolError {
     NoReceiver,
