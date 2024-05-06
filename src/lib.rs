@@ -1,7 +1,11 @@
+#![feature(iterator_try_collect)]
+#![feature(let_chains)]
+
 pub mod crossword;
 pub mod db;
 pub mod websockets;
 pub mod response;
+pub mod cookies;
 
 use std::{
     collections::HashMap, fmt, io::{prelude::*, BufReader, Error, ErrorKind}, net::TcpStream, sync::{mpsc::{self}, Arc, Mutex}, thread
@@ -9,6 +13,40 @@ use std::{
 use log::{error, info, trace, warn};
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
+
+pub fn get_form_data(raw_form: &str) -> Result<HashMap<&str,Option<&str>>,Error> {
+
+    if raw_form == "" {
+        return Err(Error::new(ErrorKind::InvalidData, "Empty form data"))
+    } 
+
+    let form_data: HashMap<&str,Option<&str>> = raw_form
+        .split("&")
+        // .map_while(|x| x.contains("="))
+        .map(| x|{
+            if x.contains("=") {
+                let kv: Vec<&str> = x.split("=").collect();
+                let k = *kv.get(0).unwrap();
+                let v = kv.get(1).and_then(|x| match *x {
+                    "" => None,
+                    x => Some(x)
+                });
+                if k == "" {
+                    error!("Field missing name");
+                    return Err(Error::new(ErrorKind::InvalidData, "field should have a name"))
+                } else {
+                    Ok((k,v))
+                }
+            }
+            else {
+                error!("Field missing =");
+                Err(Error::new(ErrorKind::InvalidData, "field should have an = to be parsed"))
+            }
+        }).try_collect()?;
+        
+        Ok(form_data)
+}
+
 
 #[derive(Debug)]
 pub enum HttpRequest {
@@ -132,7 +170,7 @@ impl fmt::Display for HttpRequest {
         fn format_headers(headers: &HashMap<String,String>) -> String {
             let header_summary = headers
             .into_iter()
-            .map(|(key,val)| format!("{:15}: {}", key, val))
+            .map(|(key,val)| format!("{}: {}", key, val))
             .collect::<Vec<String>>()
             .join("\n");
             return header_summary;
@@ -255,3 +293,64 @@ impl Drop for ThreadPool {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, io::ErrorKind};
+
+    use crate::get_form_data;
+
+
+    #[test]
+    fn test_empty_form_data() {
+        let x = get_form_data("");
+        assert_eq!(x.map_err(|e| e.kind()),Err(ErrorKind::InvalidData))
+    }
+
+    #[test]
+    fn test_one_form_data() {
+        let x = get_form_data("a=b");
+        assert_eq!(x.unwrap(), HashMap::from([("a",Some("b"))]))
+    }
+
+    #[test]
+    fn test_two_form_data() {
+        let x = get_form_data("a=b&c=d");
+        assert_eq!(x.unwrap(), HashMap::from([("a",Some("b")),("c",Some("d"))]))
+    }
+
+    #[test]
+    fn test_simple_one_blank_field() {
+        let x = get_form_data("a=");
+        assert_eq!(x.unwrap(), HashMap::from([("a",None)]))
+    }
+
+    #[test]
+    fn test_second_field_is_blank() {
+        let x = get_form_data("a=b&c=");
+        assert_eq!(x.unwrap(), HashMap::from([("a",Some("b")),("c",None)]))
+    }
+
+    #[test]
+    fn test_middle_field_is_blank() {
+        let x = get_form_data("a=b&c=&d=e");
+        assert_eq!(x.unwrap(), HashMap::from([("a",Some("b")),("c",None),("d",Some("e"))]))
+    }
+
+    #[test]
+    fn test_bad_field() {
+        let x = get_form_data("a=b&c&d=e");
+        assert_eq!(x.map_err(|e| e.kind()),Err(ErrorKind::InvalidData))
+    }
+
+    #[test]   
+    fn test_lots_of_ampersands_field() {
+        let x = get_form_data("&&&&&");
+        assert_eq!(x.map_err(|e| e.kind()),Err(ErrorKind::InvalidData))
+    }
+
+    #[test]   
+    fn test_field_with_no_name() {
+        let x = get_form_data("=c");
+        assert_eq!(x.map_err(|e| e.kind()),Err(ErrorKind::InvalidData))
+    }
+}
