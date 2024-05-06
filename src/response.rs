@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt};
 
+use chrono::{DateTime, Duration, Utc};
+
 pub enum StatusCode {
     // 100
     Continue,
@@ -151,37 +153,48 @@ pub fn internal_error_response(contents: &str) -> String {
 
 pub struct ResponseBuilder {
     status_code: Option<StatusCode>,
-    headers: Option<HashMap<String,String>>,
-    content: Option<String>
+    unique_headers: HashMap<String,String>,
+    headers: Vec<(String,String)>,
+    content: String
 }
 
 
 impl ResponseBuilder  {
 
-    pub fn build(&self) -> String {
+    pub fn build(&mut self) -> String {
         let status_code = if let Some(ref x) = self.status_code { x } else { 
             return internal_error_response("Failed to contruct response. No status code") 
         };
-        let headers = if let Some(ref x) = self.headers { x } else { 
+
+        if self.headers.is_empty() && self.unique_headers.is_empty() { 
             return internal_error_response("Failed to contruct response. No headers") 
         };
-        let content = if let Some(ref x) = self.content { x } else { 
-            return internal_error_response("Failed to contruct response. No content") 
-        };
+
+        let mut headers = self.unique_headers.iter()
+            .map(|(k,v)| (k.to_owned(),v.to_owned()) )
+            .collect::<Vec<(String,String)>>();
+
+        headers.extend(self.headers.iter().map(|x| x.to_owned()));
+
         let formatted_headers = headers.iter()
             .map(|(k,v )| format!("{k}: {v}") )
             .collect::<Vec<String>>()
             .join("\n");
-        format!("HTTP/1.1 {status_code}\r\n{formatted_headers}\r\n\r\n{content}")
+
+        format!("HTTP/1.1 {status_code}\r\n{formatted_headers}\r\n\r\n{}",self.content)
     }
 
     pub fn new() -> Self {
-        ResponseBuilder{status_code: None, headers: None, content: None }
+        ResponseBuilder{status_code: None, unique_headers: HashMap::new(), headers: Vec::new(), content: "".to_string() }
     }
 
     pub fn set_status_code(&mut self, status_code: StatusCode) ->&mut Self {
         self.status_code = Some(status_code);
         self
+    }
+    
+    pub fn set_text_content(&mut self, content: String) ->& mut Self {
+        self.set_content(content, "text/plain; charset=utf-8")
     }
 
     pub fn set_html_content(&mut self, content: String) ->& mut Self {
@@ -201,30 +214,28 @@ impl ResponseBuilder  {
     }
 
     pub fn set_content(&mut self, content: String, content_type: &str) ->& mut Self {
-        match self.headers {
-            Some(ref mut headers) => {
-                headers
-                    .entry("Content-Type".to_string())
-                    .or_insert(content_type.to_string());
-                headers
-                    .entry("Content-Length".to_string())
-                    .or_insert( format!("{}",content.len()));
-            },
-            None => {
-                self.headers = Some(HashMap::from(
-                    [
-                        ("Content-Type".to_string(),content_type.to_string()),
-                        ("Content-Length".to_string(),format!("{}",content.len())),                    
-                    ]));
-            }
-        };
-        self.content = Some(content);
+        self.unique_headers
+            .entry("Content-Type".to_string())
+            .or_insert(content_type.to_string());
+        self.unique_headers
+            .entry("Content-Length".to_string())
+            .or_insert( format!("{}",content.len()));
+        self.content = content;
         self
+    }
+
+    pub fn add_cookie(&mut self, name: impl fmt::Display, value: impl fmt::Display, max_age: Duration) -> & mut Self {
+        let max_age = max_age.num_seconds();
+        let cookie = ("Set-Cookie".to_string(), format!("{name}={value}; Max-Age={max_age}"));
+        self.headers.push(cookie);
+        self        
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use chrono::Duration;
+
     use super::StatusCode;
     use super::ResponseBuilder;
 
@@ -241,4 +252,15 @@ mod tests {
         let expected = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 39\r\n\r\nFailed to contruct response. No headers";
         assert_eq!(&response,expected)
     }
+
+    #[test]
+    fn test_cookie() {
+        let response = ResponseBuilder::new()
+            .set_status_code(StatusCode::Continue)
+            .add_cookie("a", "b", Duration::seconds(1))
+            .build();
+        let expected = "HTTP/1.1 100 Continue\r\nSet-Cookie: a=b; Max-Age=1\r\n\r\n";
+        assert_eq!(&response,expected)
+    }
+
 }

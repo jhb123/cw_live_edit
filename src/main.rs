@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, init_db, save_puzzle}, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, validate_password}, get_form_data, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, trace, warn};
@@ -42,13 +42,12 @@ fn main() {
     if let Err(e) = init_db(){
         warn!("{}",e)
     }
-    
-    info!("{:?}", *PUZZLEPOOL);
 
     let mut routes: RouteMapping = HashMap::new();
     routes.insert(r"^/$", index_handler);
 
     routes.insert(r"^/crossword.js$", crossword_js);
+    routes.insert(r"^/dialog.js$", dialog_js);
     routes.insert(r"^/crossword.html$", crossword_html);
     routes.insert(r"^/crossword.css$", crossword_css);
     routes.insert(r"^/styles.css$", styles_css);
@@ -59,6 +58,11 @@ fn main() {
     routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
 
     routes.insert(r"^/puzzle/add", puzzle_add_handler);
+
+    // routes.insert(r"^/login", login_handler);
+    routes.insert(r"^/sign-up", sign_up_handler);
+    routes.insert(r"^/log-in", log_in_handler);
+
 
 
     let tera = Tera::new("templates/**/*").unwrap_or_else(|err| {
@@ -232,7 +236,7 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
     };
     context.insert("data", "Index");
     context.insert("puzzles", &puzzle_data);
-    let contents = match tera.render("hello.html", &context){
+    let contents = match tera.render("index.html", &context){
         Ok(contents) => contents,
         Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
     };
@@ -247,7 +251,6 @@ fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
-
 
 fn not_found(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> Result<TcpStream, HandlerError> {
     let mut context = tera::Context::new();
@@ -292,6 +295,11 @@ fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<
 fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
     static_file_handler(stream, "static/crossword.js","text/javascript")
 }
+
+fn dialog_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+    static_file_handler(stream, "static/dialog.js","text/javascript")
+}
+
 fn crossword_html(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
     static_file_handler(stream, "static/crossword.html","text/html")
 }
@@ -324,6 +332,205 @@ fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) ->
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
+
+fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+
+    match req {
+        HttpRequest::Get { status_line: _, headers: _ } => {
+            let context = tera::Context::new();
+            let contents = match tera.render("signup.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+        
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::NotFound)
+                .set_html_content(contents)
+                .build();
+        
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+        HttpRequest::Post { status_line: _, headers: _, body } => {
+            let body = match std::str::from_utf8(&body) {
+                Ok(s) => s,
+                Err(_) => {
+                    return bad_request(tera, stream, "Body of the request was not valid UTF-8")
+                },
+            };
+
+            let form_data = match get_form_data(body) {
+                Ok(s) => s,
+                Err(_) => return server_error(tera, stream)
+            };
+
+            let username = match form_data.get("username") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty username field"),
+                },
+                None => return bad_request(tera, stream, "Missing username field")
+            };
+            let password = match form_data.get("password") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty password field"),
+                },
+                None => return bad_request(tera, stream, "Missing password field")
+            };
+            let repeat_password = match form_data.get("repeatPassword") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty repeat password field"),
+                },
+                None => return bad_request(tera, stream, "Missing repeat password field")
+            };
+
+            if password != repeat_password {
+                return bad_request(tera, stream, "Passwords did not match")
+            }
+
+
+            let user_id = match add_user(username, password) {
+                Ok(x) => x,
+                Err(error) => {
+                    match error {
+                        rusqlite::Error::SqliteFailure(_, _) =>  return bad_request(tera, stream, "Username is not unique"),
+                        _ => return Err(HandlerError::new(stream, Error::new(ErrorKind::InvalidData, error))),
+                    }
+                }
+            };
+
+            let session = match set_session(user_id) {
+                Ok(x) => x,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let mut context = tera::Context::new();
+            let puzzle_data = match get_all_puzzle_db(){
+                Ok(puzzle_data) => puzzle_data,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+            context.insert("data", &format!("Welcome back {}",username));
+            context.insert("puzzles", &puzzle_data);
+            let contents = match tera.render("index_content.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Accepted)
+                .set_html_content(contents)
+                .add_cookie("session-id", session, chrono::Duration::hours(1))
+                .add_cookie("username", session, chrono::Duration::hours(1))
+                .build();
+            
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+
+        },
+    }    
+}
+
+fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+
+    match req {
+        HttpRequest::Get { status_line: _, headers:_  } => {
+            let context = tera::Context::new();
+            let contents = match tera.render("login.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+        
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::NotFound)
+                .set_html_content(contents)
+                .build();
+        
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+        HttpRequest::Post { status_line: _, headers: _, body } => {
+            let body = match std::str::from_utf8(&body) {
+                Ok(s) => s,
+                Err(_) => {
+                    return bad_request(tera, stream, "Body of the request was not valid UTF-8")
+                },
+            };
+            let form_data = match get_form_data(body) {
+                Ok(s) => s,
+                Err(e) => return bad_request(tera, stream, &e.to_string())
+            };
+
+            let username = match form_data.get("username") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty username field"),
+                },
+                None => return bad_request(tera, stream, "Missing username field")
+            };
+            let password = match form_data.get("password") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty password field"),
+                },
+                None => return bad_request(tera, stream, "Missing password field")
+            };
+
+            let sign_in = match get_user_password(username) {
+                Ok(s) => {
+                    info!("Successfully got password");
+                    s
+                },
+                Err(e) => {
+                    info!("{:?}",e);
+                    return bad_request(tera, stream, &format!("{} Incorrect password",username))
+                }
+            };
+
+            if let Err(_) = validate_password(password, &sign_in.password) {
+                return bad_request(tera, stream, &format!("Wrong password"))
+            }
+
+            let session = match set_session(sign_in.id) {
+                Ok(x) => x,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+
+            let mut context = tera::Context::new();
+            let puzzle_data = match get_all_puzzle_db(){
+                Ok(puzzle_data) => puzzle_data,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+            context.insert("data", &format!("Welcome back {}",username));
+            context.insert("puzzles", &puzzle_data);
+            let contents = match tera.render("index_content.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Accepted)
+                .set_html_content(contents)
+                .add_cookie("session-id", session, chrono::Duration::hours(1))
+                .build();
+            
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+    }    
+}
+
+
 
 fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
     // acquire the html of the page.

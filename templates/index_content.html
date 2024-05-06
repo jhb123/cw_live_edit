@@ -1,0 +1,37 @@
+{% if logged_in %}
+    <p>{{ data }}</p>
+    <button>Log out</button>
+    {% else %}
+    <button id="showSignUpDialog">Sign Up</button>
+    <button id="showLogInDialog">Log in</button>
+{% endif %}
+<hr>
+<ul>
+{% for puzzle in puzzles%}
+<li><a href="/puzzle/{{puzzle.id}}">Puzzle {{puzzle.name}}</a></li>
+{% endfor %}
+</ul>
+<dialog id="signUpDialog">
+    <form id="signUp"  hx-post='/sign-up' hx-swap="innerHTML" hx-target="#page-content">
+        <label for="usernameSignUp">Choose username</label>
+        <input type="text" id="usernameSignUp" name="username" />
+        <label for="passwordSignUp">Choose password</label>
+        <input type="password" id="passwordSignUp" name="password" required minlength="8"/>
+        <label for="repeatPassword">Repeat password</label>
+        <input type="password" id="repeatPassword" name="repeatPassword" required minlength="8"/>
+        <input type="submit">
+    </form>
+    <button id="closeSignUpDialog">Close</button>
+</dialog>
+
+<dialog id="logInDialog">
+    <form id="logIn"  hx-post='/log-in' hx-swap="innerHTML" hx-target="#page-content">
+        <label for="usernameLogIn">Username</label>
+        <input type="text" id="usernameLogIn" name="username" />
+        <label for="passwordLogIn">Password</label>
+        <input type="password" id="passwordLogIn" name="password" required minlength="8"/>
+        <input type="submit">
+    </form>
+    <button id="closeLogInDialog">Close</button>
+</dialog>
+<script src="/dialog.js"></script> 

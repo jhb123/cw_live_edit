@@ -7,7 +7,7 @@
     <script src="https://unpkg.com/htmx.org@1.9.9"></script> 
     <link rel="stylesheet" type="text/css" href="/styles.css">
 </head>
-<body id="main-body">
+<body>
   <nav>
     <h1>{% block page_name %}Crossword{% endblock %}</h1>
     <div>
@@ -17,7 +17,7 @@
       </ul>
     </div>
   </nav>
-    <main>
+    <main id="page-content">
       {% block content %}{% endblock %}
     </main>
 </body>
