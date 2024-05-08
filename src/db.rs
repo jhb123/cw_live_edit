@@ -3,6 +3,7 @@ use log::{error, info, warn};
 use lazy_static::lazy_static;
 use rusqlite::{named_params, Connection};
 use serde::Serialize;
+use sha256::digest;
 
 use crate::crossword::Crossword;
 
@@ -31,11 +32,21 @@ pub fn init_db() -> Result<(), rusqlite::Error> {
              file text not null unique
          )",()
     )?;
+
+    conn.execute(
+        "create table if not exists users (
+             id integer primary key,
+             username text not null unique,
+             password text not null,
+             session integer
+         )",()
+    )?;
+
     Ok(())
 }
 
 pub fn add_puzzle_to_db(name: &str, file: &str) -> Result<(), rusqlite::Error> {
-    info!("inserting data");
+    info!("inserting puzzle data");
     let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     let mut stmt = conn.prepare(
@@ -45,6 +56,74 @@ pub fn add_puzzle_to_db(name: &str, file: &str) -> Result<(), rusqlite::Error> {
 
     Ok(())
 }
+
+pub fn add_user(username: &str, password: &str) -> Result<i64, rusqlite::Error> {
+    info!("inserting data");
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+
+    let hash = digest(password);
+
+    let mut stmt = conn.prepare(
+        "insert into users (username, password) values (:username, :password)"
+    )?;
+    stmt.execute(named_params! { ":username": username, ":password": hash})?;
+
+    Ok(conn.last_insert_rowid())
+}
+
+pub struct SignIn {
+    pub id: i64,
+    pub password: String
+}
+
+pub fn get_user_password(username: &str) -> Result<SignIn, rusqlite::Error> {
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+
+    let mut stmt = conn.prepare(
+        "select id, password from users where username=(:username)"
+    )?;
+    
+    let rows: Result<SignIn, rusqlite::Error> = stmt.query_row(&[(":username", username)], |row| {
+        let id = row.get(0)?;
+        let password = row.get(1)?;
+        Ok(SignIn { id, password})
+    });
+    rows
+}
+
+pub fn set_session(user_id: i64) -> Result<i64, rusqlite::Error> {
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+
+    let session: i64 = rand::random();
+
+    let mut stmt = conn.prepare(
+        "update users set session=(:session) where id=(:user_id)"
+    )?;
+
+    stmt.execute(named_params! { ":session": session, ":user_id": user_id})?;
+
+    Ok(session)
+}
+
+pub fn check_session(id: i64, session: i64) -> Result<bool, rusqlite::Error> {
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+
+    let mut stmt = conn.prepare(
+        "select session from users where id=(:user_id)"
+    )?;
+
+    let session_db: i64 = stmt.query_row(&[(":user_id", &id.to_string())], |row| {
+        row.get(0)
+    })?;
+
+    Ok(session_db == session)
+}
+
+pub fn validate_password(plain: &str, hashed: &str) -> Result<(), () > {
+    let hash = digest(plain);
+    if hashed == hash {Ok(())} else { Err(()) }
+}
+
 
 #[derive(Debug,Serialize)]
 pub struct PuzzleDbData {
@@ -94,7 +173,6 @@ impl PuzzleDbData {
 }
 
 pub fn get_all_puzzle_db() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
-    info!("all data:");
     let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     let mut stmt = conn.prepare(

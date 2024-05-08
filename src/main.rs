@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{Cell, Crossword}, db::{create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, init_db, save_puzzle}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, validate_password}, get_form_data, get_login_cookies, is_authorised, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, trace, warn};
@@ -9,7 +9,7 @@ use std::{
     collections::HashMap, env, fs::File, io::{prelude::*, BufReader, Error, ErrorKind}, net::{TcpListener, TcpStream}, sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
-    }, thread::{self, sleep}, time::Duration
+    }, thread::sleep, time::Duration
 };
 use tera::Tera;
 
@@ -42,13 +42,12 @@ fn main() {
     if let Err(e) = init_db(){
         warn!("{}",e)
     }
-    
-    info!("{:?}", *PUZZLEPOOL);
 
     let mut routes: RouteMapping = HashMap::new();
     routes.insert(r"^/$", index_handler);
 
     routes.insert(r"^/crossword.js$", crossword_js);
+    routes.insert(r"^/dialog.js$", dialog_js);
     routes.insert(r"^/crossword.html$", crossword_html);
     routes.insert(r"^/crossword.css$", crossword_css);
     routes.insert(r"^/styles.css$", styles_css);
@@ -59,6 +58,12 @@ fn main() {
     routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
 
     routes.insert(r"^/puzzle/add", puzzle_add_handler);
+
+    // routes.insert(r"^/login", login_handler);
+    routes.insert(r"^/sign-up", sign_up_handler);
+    routes.insert(r"^/log-in", log_in_handler);
+    routes.insert(r"^/log-out", log_out_handler);
+
 
 
     let tera = Tera::new("templates/**/*").unwrap_or_else(|err| {
@@ -182,7 +187,7 @@ impl Api {
         }
         trace!("{} Didn't match any routes", incoming_route);
 
-        if let Err(err) = missing(Arc::clone(&self.tera), stream, None) {
+        if let Err(err) = not_found(Arc::clone(&self.tera), stream, None) {
             error!("No routes were found, but the missing route handler threw an error: {}", err.error);
             if let Err(e) = self.server_error(err.stream) {
                 warn!("Failed to send the client the server error page: {}", e.error);
@@ -208,8 +213,6 @@ impl Api {
 }
 
 fn server_error(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
-    let status_line = "HTTP/1.1 500 Internal Server Error";
-    info!("Response Status {}", status_line);
     let mut context = tera::Context::new();
     context.insert("status", "500");
     context.insert("message", "Internal Server Error");
@@ -217,53 +220,74 @@ fn server_error(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, Han
         error!("Could not render error template: {0}", err);
         "500 - Internal Server Error".to_string()
     });
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    let response = internal_error_response(&contents);
+
     match stream.write_all(response.as_bytes()) {
         Ok(_) => Ok(stream),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
-    let status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", status_line);
-    let mut context = tera::Context::new();
+fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
 
-    let puzzle_data = match get_all_puzzle_db(){
-        Ok(puzzle_data) => puzzle_data,
-        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
-    };
-    
-    context.insert("data", "Index");
-    context.insert("puzzles", &puzzle_data);
+    match req {
+        HttpRequest::Get { status_line: _, headers } => {
+            
+            let mut context = tera::Context::new();
+            let puzzle_data = match get_all_puzzle_db(){
+                Ok(puzzle_data) => puzzle_data,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
 
-    let contents = match tera.render("hello.html", &context){
-        Ok(contents) => contents,
-        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
-    };
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-    match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
-        Err(error) => Err(HandlerError::new(stream, error))
-    }
+            match is_authorised(headers) {
+                Ok(_) => {
+                    context.insert("logged_in", &true);
+                    context.insert("data", "Logged In");
+                },
+                Err(e) => {
+                    error!("Not logged in");
+                    context.insert("data", &e)
+                },
+            };
+
+            
+            context.insert("puzzles", &puzzle_data);
+            let contents = match tera.render("index.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Ok)
+                .set_html_content(contents)
+                .build();
+            
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+        HttpRequest::Post { status_line: _, headers: _, body: _ } => {
+            return bad_request(tera, stream, "method not supported")
+        }
+    }    
 }
 
-
-fn missing(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> Result<TcpStream, HandlerError> {
-    let status_line = "HTTP/1.1 404 Not Found";
-    info!("Response Status {}", status_line);
+fn not_found(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> Result<TcpStream, HandlerError> {
     let mut context = tera::Context::new();
     context.insert("status", "404");
     context.insert("message", message.unwrap_or("Not Found"));
-
     let contents = match tera.render("error.html", &context){
         Ok(contents) => contents,
         Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
     };
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::NotFound)
+        .set_html_content(contents)
+        .build();
+
     match stream.write_all(response.as_bytes()) {
         Ok(_) => Ok(stream),
         Err(error) => Err(HandlerError::new(stream, error))
@@ -271,8 +295,6 @@ fn missing(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> Res
 }
 
 fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<TcpStream, HandlerError> {
-    let status_line = "HTTP/1.1 400 Bad Request";
-    info!("Response Status {}", status_line);
     let mut context = tera::Context::new();
     context.insert("status", "400");
     context.insert("message", message );
@@ -280,8 +302,12 @@ fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<
         Ok(contents) => contents,
         Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
     };
-    let length = contents.len();
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::BadRequest)
+        .set_html_content(contents)
+        .build();
+
     match stream.write_all(response.as_bytes()) {
         Ok(_) => Ok(stream),
         Err(error) => Err(HandlerError::new(stream, error))
@@ -289,9 +315,13 @@ fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<
 }
 
 fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
-    static_file_handler(
-        stream,"static/crossword.js","text/javascript")
+    static_file_handler(stream, "static/crossword.js","text/javascript")
 }
+
+fn dialog_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+    static_file_handler(stream, "static/dialog.js","text/javascript")
+}
+
 fn crossword_html(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
     static_file_handler(stream, "static/crossword.html","text/html")
 }
@@ -300,30 +330,265 @@ fn crossword_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result
 }
 
 fn styles_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
-    static_file_handler(stream, "static/styles.css","text/css")
+    static_file_handler(stream,"static/styles.css","text/css")
 }
 
 fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<TcpStream, HandlerError> {
-    let status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", status_line);
-
     let mut file = match File::open(path){
         Ok(file) => file,
         Err(error) => return Err(HandlerError::new(stream, error))
     };
 
     let mut contents = String::new();
-    let length = match file.read_to_string(&mut contents) {
-        Ok(size) => size,
-        Err(error) => return Err(HandlerError::new(stream, error))
+    if let Err(error) = file.read_to_string(&mut contents) {
+        return Err(HandlerError::new(stream, error))
     };
+    
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_content(contents, content_type)
+        .build();
 
-    let response = format!("{status_line}\r\nContent-Length: {length}\nContent-Type: {content_type}\r\n\r\n{contents}");
     match stream.write_all(response.as_bytes()) {
         Ok(_) => Ok(stream),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
+
+fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+
+    match req {
+        HttpRequest::Get { status_line: _, headers: _ } => {
+            let context = tera::Context::new();
+            let contents = match tera.render("signup.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+        
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::NotFound)
+                .set_html_content(contents)
+                .build();
+        
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+        HttpRequest::Post { status_line: _, headers: _, body } => {
+            let body = match std::str::from_utf8(&body) {
+                Ok(s) => s,
+                Err(_) => {
+                    return bad_request(tera, stream, "Body of the request was not valid UTF-8")
+                },
+            };
+
+            let form_data = match get_form_data(body) {
+                Ok(s) => s,
+                Err(_) => return server_error(tera, stream)
+            };
+
+            let username = match form_data.get("username") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty username field"),
+                },
+                None => return bad_request(tera, stream, "Missing username field")
+            };
+            let password = match form_data.get("password") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty password field"),
+                },
+                None => return bad_request(tera, stream, "Missing password field")
+            };
+            let repeat_password = match form_data.get("repeatPassword") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty repeat password field"),
+                },
+                None => return bad_request(tera, stream, "Missing repeat password field")
+            };
+
+            if password != repeat_password {
+                return bad_request(tera, stream, "Passwords did not match")
+            }
+
+
+            let user_id = match add_user(username, password) {
+                Ok(x) => x,
+                Err(error) => {
+                    match error {
+                        rusqlite::Error::SqliteFailure(_, _) =>  return bad_request(tera, stream, "Username is not unique"),
+                        _ => return Err(HandlerError::new(stream, Error::new(ErrorKind::InvalidData, error))),
+                    }
+                }
+            };
+
+            let session = match set_session(user_id) {
+                Ok(x) => x,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let mut context = tera::Context::new();
+            let puzzle_data = match get_all_puzzle_db(){
+                Ok(puzzle_data) => puzzle_data,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+            context.insert("logged_in", &true);
+            context.insert("data", &format!("Welcome back {}",username));
+            context.insert("puzzles", &puzzle_data);
+            let contents = match tera.render("index_content.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let (session_cookie, username_cookie) = get_login_cookies(session, user_id);
+
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Accepted)
+                .set_html_content(contents)
+                .add_cookie(session_cookie)
+                .add_cookie(username_cookie)
+                .build();
+            
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+
+        },
+    }    
+}
+
+fn log_out_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+
+    let mut context = tera::Context::new();
+    let puzzle_data = match get_all_puzzle_db(){
+        Ok(puzzle_data) => puzzle_data,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+    context.insert("logged_in", &false);
+    context.insert("puzzles", &puzzle_data);
+    let contents = match tera.render("index_content.html", &context){
+        Ok(contents) => contents,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let (session_cookie, username_cookie) = get_login_cookies(-1, -1);
+
+    let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Accepted)
+                .set_html_content(contents)
+                .add_cookie(session_cookie)
+                .add_cookie(username_cookie)
+                .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
+}
+
+fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+
+    match req {
+        HttpRequest::Get { status_line: _, headers:_  } => {
+            let context = tera::Context::new();
+            let contents = match tera.render("login.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+        
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::NotFound)
+                .set_html_content(contents)
+                .build();
+        
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+        HttpRequest::Post { status_line: _, headers: _, body } => {
+            let body = match std::str::from_utf8(&body) {
+                Ok(s) => s,
+                Err(_) => {
+                    return bad_request(tera, stream, "Body of the request was not valid UTF-8")
+                },
+            };
+            let form_data = match get_form_data(body) {
+                Ok(s) => s,
+                Err(e) => return bad_request(tera, stream, &e.to_string())
+            };
+
+            let username = match form_data.get("username") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty username field"),
+                },
+                None => return bad_request(tera, stream, "Missing username field")
+            };
+            let password = match form_data.get("password") {
+                Some(x) => match *x {
+                    Some(x) => x,
+                    None => return bad_request(tera, stream, "Empty password field"),
+                },
+                None => return bad_request(tera, stream, "Missing password field")
+            };
+
+            let sign_in = match get_user_password(username) {
+                Ok(s) => {
+                    info!("Successfully got password");
+                    s
+                },
+                Err(e) => {
+                    info!("{:?}",e);
+                    return bad_request(tera, stream, &format!("{} Incorrect password",username))
+                }
+            };
+
+            if let Err(_) = validate_password(password, &sign_in.password) {
+                return bad_request(tera, stream, &format!("Wrong password"))
+            }
+
+            let session = match set_session(sign_in.id) {
+                Ok(x) => x,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+
+            let mut context = tera::Context::new();
+            let puzzle_data = match get_all_puzzle_db(){
+                Ok(puzzle_data) => puzzle_data,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+            context.insert("data", &format!("Welcome back {}",username));
+            context.insert("logged_in", &true);
+            context.insert("puzzles", &puzzle_data);
+            let contents = match tera.render("index_content.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let (session_cookie, username_cookie) = get_login_cookies(session, sign_in.id);
+
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Accepted)
+                .set_html_content(contents)
+                .add_cookie(session_cookie)
+                .add_cookie(username_cookie)
+                .build();
+            
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+    }    
+}
+
+
 
 fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
     // acquire the html of the page.
@@ -339,14 +604,12 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
     };
     let puzzle_num = caps["num"].to_string();
 
-    let response_status_line = "HTTP/1.1 200 Ok";
-    info!("Response Status {}", response_status_line);
     let mut context = tera::Context::new();
     context.insert("src", &format!("/puzzle/{puzzle_num}"));
     let data = match get_puzzle_db(&puzzle_num) {
         Ok(data) => data,
         Err( error) if error == rusqlite::Error::QueryReturnedNoRows => {
-            return missing(tera, stream, Some(&format!("No puzzle with ID {puzzle_num}")))
+            return not_found(tera, stream, Some(&format!("No puzzle with ID {puzzle_num}")))
         },
         Err(error) => {
             return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
@@ -358,8 +621,12 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
         Ok(contents) => contents,
         Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
     };
-    let length = contents.len();
-    let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_html_content(contents)
+        .build();
+
     match stream.write_all(response.as_bytes()) {
         Ok(_) => Ok(stream),
         Err(error) => Err(HandlerError::new(stream, error))
@@ -458,10 +725,10 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
             };
 
 
-            let _ = create_new_puzzle(&request_data.name, &request_data.crossword);
+            if let Err(error) = create_new_puzzle(&request_data.name, &request_data.crossword) {
+                return Err(HandlerError::new(stream, error))
+            }
 
-            let response_status_line = "HTTP/1.1 200 Ok";
-            info!("Response Status {}", response_status_line);
             let contents = match serde_json::to_string(&request_data.crossword){
                 Ok(s) => s,
                 Err(e) => {
@@ -469,8 +736,11 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
                 },
             };
 
-            let length = contents.len();
-            let response = format!("{response_status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Ok)
+                .set_json_content(contents)
+                .build();
+
             match stream.write_all(response.as_bytes()) {
                 Ok(_) => return Ok(stream),
                 Err(error) => return Err(HandlerError::new(stream, error))
@@ -480,7 +750,6 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
     };
 
 }
-
 
 #[derive(Debug)]
 struct PuzzlePool {
@@ -557,8 +826,6 @@ impl PuzzlePool {
 
                 match get_puzzle(&puzzle_num) {
                     Ok(grid) => {
-                        let status_line = "HTTP/1.1 200 Ok";
-                        info!("Response Status {}", status_line);
 
                         let contents = match serde_json::to_string(&grid){
                             Ok(s) => s,
@@ -567,8 +834,11 @@ impl PuzzlePool {
                             },
                         };
 
-                        let length = contents.len();
-                        let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+                        let response = ResponseBuilder::new()
+                        .set_status_code(StatusCode::Ok)
+                        .set_json_content(contents)
+                        .build();
+
                         match stream.write_all(response.as_bytes()) {
                             Ok(_) => return Ok(stream),
                             Err(error) => return Err(HandlerError::new(stream, error))
@@ -736,8 +1006,6 @@ impl PuzzleChannel {
 
 
     fn send_puzzle(&self, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
-        let status_line = "HTTP/1.1 200 Ok";
-        info!("Response Status {}", status_line);
         let grid = match self.crossword.lock() {
             Ok(grid) => grid,
             Err(e) => {
@@ -753,9 +1021,10 @@ impl PuzzleChannel {
                 return server_error(self.tera.clone(), stream)
             },
         };
-
-        let length = contents.len();
-        let response = format!("{status_line}\r\nContent-Length: {length}\r\nContent-Type: application/json\r\n\r\n{contents}");
+        let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_json_content(contents)
+        .build();
         match stream.write_all(response.as_bytes()) {
             Ok(_) => Ok(stream),
             Err(error) => Err(HandlerError::new(stream, error))
