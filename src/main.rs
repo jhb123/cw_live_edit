@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, validate_password}, get_form_data, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, validate_password}, get_form_data, get_login_cookies, is_authorised, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, trace, warn};
@@ -62,6 +62,7 @@ fn main() {
     // routes.insert(r"^/login", login_handler);
     routes.insert(r"^/sign-up", sign_up_handler);
     routes.insert(r"^/log-in", log_in_handler);
+    routes.insert(r"^/log-out", log_out_handler);
 
 
 
@@ -228,28 +229,49 @@ fn server_error(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, Han
     }
 }
 
-fn index_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
-    let mut context = tera::Context::new();
-    let puzzle_data = match get_all_puzzle_db(){
-        Ok(puzzle_data) => puzzle_data,
-        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
-    };
-    context.insert("data", "Index");
-    context.insert("puzzles", &puzzle_data);
-    let contents = match tera.render("index.html", &context){
-        Ok(contents) => contents,
-        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
-    };
+fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
 
-    let response = ResponseBuilder::new()
-        .set_status_code(StatusCode::Ok)
-        .set_html_content(contents)
-        .build();
-    
-    match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
-        Err(error) => Err(HandlerError::new(stream, error))
-    }
+    match req {
+        HttpRequest::Get { status_line: _, headers } => {
+            
+            let mut context = tera::Context::new();
+            let puzzle_data = match get_all_puzzle_db(){
+                Ok(puzzle_data) => puzzle_data,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            match is_authorised(headers) {
+                Ok(_) => {
+                    context.insert("logged_in", &true);
+                    context.insert("data", "Logged In");
+                },
+                Err(e) => {
+                    error!("Not logged in");
+                    context.insert("data", &e)
+                },
+            };
+
+            
+            context.insert("puzzles", &puzzle_data);
+            let contents = match tera.render("index.html", &context){
+                Ok(contents) => contents,
+                Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+            };
+
+            let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Ok)
+                .set_html_content(contents)
+                .build();
+            
+            match stream.write_all(response.as_bytes()) {
+                Ok(_) => Ok(stream),
+                Err(error) => Err(HandlerError::new(stream, error))
+            }
+        },
+        HttpRequest::Post { status_line: _, headers: _, body: _ } => {
+            return bad_request(tera, stream, "method not supported")
+        }
+    }    
 }
 
 fn not_found(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> Result<TcpStream, HandlerError> {
@@ -413,6 +435,7 @@ fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) ->
                 Ok(puzzle_data) => puzzle_data,
                 Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
             };
+            context.insert("logged_in", &true);
             context.insert("data", &format!("Welcome back {}",username));
             context.insert("puzzles", &puzzle_data);
             let contents = match tera.render("index_content.html", &context){
@@ -420,11 +443,13 @@ fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) ->
                 Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
             };
 
+            let (session_cookie, username_cookie) = get_login_cookies(session, user_id);
+
             let response = ResponseBuilder::new()
                 .set_status_code(StatusCode::Accepted)
                 .set_html_content(contents)
-                .add_cookie("session-id", session, chrono::Duration::hours(1))
-                .add_cookie("username", session, chrono::Duration::hours(1))
+                .add_cookie(session_cookie)
+                .add_cookie(username_cookie)
                 .build();
             
             match stream.write_all(response.as_bytes()) {
@@ -434,6 +459,35 @@ fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) ->
 
         },
     }    
+}
+
+fn log_out_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+
+    let mut context = tera::Context::new();
+    let puzzle_data = match get_all_puzzle_db(){
+        Ok(puzzle_data) => puzzle_data,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+    context.insert("logged_in", &false);
+    context.insert("puzzles", &puzzle_data);
+    let contents = match tera.render("index_content.html", &context){
+        Ok(contents) => contents,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let (session_cookie, username_cookie) = get_login_cookies(-1, -1);
+
+    let response = ResponseBuilder::new()
+                .set_status_code(StatusCode::Accepted)
+                .set_html_content(contents)
+                .add_cookie(session_cookie)
+                .add_cookie(username_cookie)
+                .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
 }
 
 fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
@@ -510,16 +564,20 @@ fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
                 Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
             };
             context.insert("data", &format!("Welcome back {}",username));
+            context.insert("logged_in", &true);
             context.insert("puzzles", &puzzle_data);
             let contents = match tera.render("index_content.html", &context){
                 Ok(contents) => contents,
                 Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
             };
 
+            let (session_cookie, username_cookie) = get_login_cookies(session, sign_in.id);
+
             let response = ResponseBuilder::new()
                 .set_status_code(StatusCode::Accepted)
                 .set_html_content(contents)
-                .add_cookie("session-id", session, chrono::Duration::hours(1))
+                .add_cookie(session_cookie)
+                .add_cookie(username_cookie)
                 .build();
             
             match stream.write_all(response.as_bytes()) {
@@ -692,7 +750,6 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
     };
 
 }
-
 
 #[derive(Debug)]
 struct PuzzlePool {

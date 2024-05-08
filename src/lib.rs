@@ -5,12 +5,12 @@ pub mod crossword;
 pub mod db;
 pub mod websockets;
 pub mod response;
-pub mod cookies;
 
 use std::{
     collections::HashMap, fmt, io::{prelude::*, BufReader, Error, ErrorKind}, net::TcpStream, sync::{mpsc::{self}, Arc, Mutex}, thread
 };
 use log::{error, info, trace, warn};
+use response::SetCookie;
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
@@ -193,6 +193,74 @@ impl fmt::Display for HttpRequest {
             },
         }
         
+    }
+}
+
+pub fn get_login_cookies(session: i64, username: i64) -> (SetCookie<String>, SetCookie<String>) {
+    let mut session_cookie = SetCookie::new("session-id".to_string(), session.to_string());
+    session_cookie.set_max_age(chrono::Duration::minutes(60));
+
+    let mut username_cookie = SetCookie::new("user-id".to_string(), username.to_string());
+    username_cookie.set_max_age(chrono::Duration::minutes(60));
+    (session_cookie, username_cookie)
+}
+
+pub fn is_authorised(headers: &HashMap<String,String>) -> Result<(),String> {
+
+    #[derive(PartialEq, Eq)]
+    struct Cookie<'a> {
+        name: &'a str,
+        value: &'a str
+    }
+
+    let cookies = headers.get("Cookie");
+    if cookies.is_none() {
+        info!("Missing cookie header");
+        return Err("missing session-id or user-id".to_string())       
+    }
+    let cookies: Vec<Cookie> = cookies.unwrap().split(";").map(|x| {
+        let mut c = x.split("=");
+        let name = c.next().unwrap().trim();
+        let value = c.next().unwrap().trim();
+        Cookie{ name, value}
+    }).collect();
+
+    let session_cookie: Option<&Cookie> = cookies.iter().find(|x| x.name=="session-id");
+    let user_id_cookie: Option<&Cookie> = cookies.iter().find(|x| x.name=="user-id");
+
+    let session: i64 = match session_cookie {
+        Some(c) => {
+            match c.value.parse() {
+                Ok(x) => x,
+                Err(e) => {
+                    info!("Can't parse session cookie as an int");
+                    return Err(format!("Session must be an integer - found {}", e))
+                }
+            }
+        },
+        None => return Err("missing session-id".to_string()),
+    };
+
+    let id: i64 = match user_id_cookie {
+        Some(c) => {
+            match c.value.parse() {
+                Ok(x) => x,
+                Err(e) => {
+                    info!("Can't parse user-id cookie as an int");
+                    return Err(format!("Session must be an integer - found {}", e))
+                }
+            }
+        },
+        None => return Err("missing user-id".to_string()),
+    };
+
+
+    match db::check_session(id,session) {
+        Ok(_) => return {
+            trace!("User signed in");
+            Ok(())
+        },
+        Err(_) => return Err("Failed to validate user session".to_string()),
     }
 }
 

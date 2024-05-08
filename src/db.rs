@@ -1,5 +1,5 @@
 use std::{env, fs::{self, File}, io::{Error, ErrorKind, Read, Write}, path::Path};
-use log::{error, info, trace, warn};
+use log::{error, info, warn};
 use lazy_static::lazy_static;
 use rusqlite::{named_params, Connection};
 use serde::Serialize;

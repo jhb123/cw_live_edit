@@ -1,6 +1,5 @@
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt::{self, Display}};
 
-use chrono::{DateTime, Duration, Utc};
 
 pub enum StatusCode {
     // 100
@@ -73,7 +72,7 @@ pub enum StatusCode {
     NetworkAuthenticationRequired
 }
 
-impl fmt::Display for StatusCode {
+impl Display for StatusCode {
 
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 
@@ -224,20 +223,258 @@ impl ResponseBuilder  {
         self
     }
 
-    pub fn add_cookie(&mut self, name: impl fmt::Display, value: impl fmt::Display, max_age: Duration) -> & mut Self {
-        let max_age = max_age.num_seconds();
-        let cookie = ("Set-Cookie".to_string(), format!("{name}={value}; Max-Age={max_age}"));
+    pub fn add_cookie(&mut self, cookie: SetCookie<String>) -> & mut Self {
+        
+        let cookie = ("Set-Cookie".to_string(), format!("{cookie}"));
         self.headers.push(cookie);
         self        
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum SameSite {
+    Strict,
+    Lax,
+    None,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseSameSiteError;
+
+impl std::str::FromStr for SameSite {
+    type Err = ParseSameSiteError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Strict" => Ok(Self::Strict),
+            "Lax" => Ok(Self::Lax),
+            "None" => Ok(Self::None),
+            _ => Err(ParseSameSiteError),
+        }
+    }
+}
+
+impl Display for SameSite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SameSite::Strict => write!(f, "Strict"),
+            SameSite::Lax => write!(f, "Lax"),
+            SameSite::None => write!(f, "None"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SetCookie<T: Display> {
+    pub name: String,
+    pub value: T,
+    pub domain: Option<String>,
+    pub expires: Option<chrono::NaiveDateTime>,
+    pub http_only: Option<bool>,
+    pub max_age: Option<chrono::Duration>,
+    pub partitioned: Option<bool>,
+    pub path: Option<String>,
+    pub same_site: Option<SameSite>,
+    pub secure: Option<bool>,
+}
+
+impl<T: Display> SetCookie<T> {
+    pub fn new(name: String, value: T) -> Self {
+        SetCookie {
+            name,
+            value,
+            domain: None,
+            expires: None,
+            http_only: None,
+            max_age: None,
+            partitioned: None,
+            path: None,
+            same_site: None,
+            secure: None,
+        }
+    }
+
+    pub fn set_max_age(&mut self, max_age: chrono::Duration) -> &Self {
+        self.max_age = Some(max_age);
+        self
+    }
+    pub fn set_expires(&mut self, expires: chrono::NaiveDateTime) -> &Self {
+        self.expires = Some(expires);
+        self
+    }
+}
+
+impl<T: Display> Display for SetCookie<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}={}", self.name, self.value)?;
+        if let Some(s) = &self.domain {
+            write!(f, "; Domain={}", s)?;
+        }
+        if let Some(s) = &self.expires {
+            let t = chrono::NaiveDateTime::format(&s, "%a, %d %b %Y %X GMT");
+            write!(f, "; Expires={}", t)?;
+        }
+        if let Some(s) = &self.http_only {
+            if *s {write!(f, "; HttpOnly")?};
+        }
+        if let Some(s) = &self.max_age {
+            write!(f, "; Max-Age={}", s.num_seconds())?;
+        }
+        if let Some(s) = &self.partitioned {
+            if *s {write!(f, "; Partitioned")?}
+        }
+        if let Some(s) = &self.path {
+            write!(f, "; Path={}", s)?;
+        }
+        if let Some(s) = &self.same_site {
+            write!(f, "; SameSite={}", s)?;
+        }
+        if let Some(s) = &self.secure {
+            if *s {write!(f, "; Secure")?}
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use chrono::Duration;
-
+    use chrono::{Duration, NaiveDate};
+    use super::SetCookie;
     use super::StatusCode;
     use super::ResponseBuilder;
+
+    fn set_cookie_from_header_text(header_text: &str) -> Result<SetCookie<String>, String> {
+        let mut header_info = header_text.split(";");
+        let mut name_val = header_info.next().unwrap().split("=");
+        let name = name_val.next().unwrap();
+        let val = name_val.next().unwrap_or("");
+    
+        let mut cookie = SetCookie::new(name.to_string(), val.to_string());
+    
+        header_info.try_for_each(|x| {
+            match x {
+                "HttpOnly" => {
+                    cookie.http_only = Some(true);
+                    Ok(())
+                }
+                "Partitioned" => {
+                    cookie.partitioned = Some(true);
+                    Ok(())
+                }
+                "Secure" => {
+                    cookie.secure = Some(true);
+                    Ok(())
+                }
+                x if x.contains("=") => {
+                    // these unwraps are fine. The string contains at least
+                    // 1 equals, so it will always have at 2 parts.
+                    let mut iter = x.split("=");
+                    let k = iter.next().unwrap();
+                    let v = iter.next().unwrap().to_string();
+                    match k.trim() {
+                        "Domain" => {
+                            cookie.domain = Some(v);
+                            Ok(())
+                        }
+                        "Expires" => {
+                            match chrono::NaiveDateTime::parse_from_str(&v, "%a, %d %b %Y %X GMT") {
+                                Ok(x) => {
+                                    cookie.expires = Some(x);
+                                    Ok(())
+                                }
+                                Err(e) => Err(format!("{e}, {v} is not a valid date format")),
+                            }
+                        }
+                        "Max-Age" => {
+                            let t = match v.parse(){
+                                Ok(t) => t,
+                                Err(_) => return Err("cannot parse Max-Age as an integer".to_string()),
+                            };
+                            cookie.max_age = Some(Duration::seconds(t));
+                            Ok(())
+                        }
+                        "Path" => {
+                            cookie.path = Some(v.to_string());
+                            Ok(())
+                        }
+                        "SameSite" => match SameSite::from_str(&v) {
+                            Ok(same_site_val) => {
+                                cookie.same_site = Some(same_site_val);
+                                Ok(())
+                            }
+                            Err(_) => Err(format!("Same site cannot be {v}")),
+                        },
+                        k => Err(format!("{k} is not a valid parameter for a cookie")),
+                    }
+                }
+                x => Err(format!("{x} is not a valid parameter for a cookie")),
+            }
+        })?;
+    
+        Ok(cookie)
+    }
+
+    #[test]
+    fn test_simple_cookie_name() {
+        let cookie = set_cookie_from_header_text("id=a3fWa").unwrap();
+        assert_eq!(cookie.name, "id");
+    }
+
+    #[test]
+    fn test_simple_cookie_value() {
+        let cookie = set_cookie_from_header_text("id=a3fWa").unwrap();
+        assert_eq!(cookie.value, "a3fWa");
+    }
+
+    #[test]
+    fn test_cookie_expire_time() {
+        let cookie = set_cookie_from_header_text("id=a3fWa; Expires=Wed, 21 Oct 2015 07:28:01 GMT").unwrap();
+        assert_eq!(
+            cookie.expires.unwrap(),
+            NaiveDate::from_ymd_opt(2015, 10, 21)
+                .unwrap()
+                .and_hms_opt(7, 28, 1)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_max_age() {
+        let cookie = set_cookie_from_header_text("id=a3fWa; Max-Age=1").unwrap();
+        assert_eq!(cookie.max_age.unwrap(), Duration::seconds(1));
+    }
+
+    #[test]
+    fn test_invalid_max_age() {
+        let cookie = set_cookie_from_header_text("id=a3fWa; Max-Age=f");
+        assert!(cookie.is_err());
+    }
+
+    #[test]
+    fn test_cookie_expire_serialisation() {
+        let mut cookie = SetCookie::new("id".to_string(), "a3fWa".to_string());
+
+        cookie.set_expires(
+            NaiveDate::from_ymd_opt(2015, 10, 21)
+                .unwrap()
+                .and_hms_opt(7, 28, 1)
+                .unwrap(),
+        );
+
+        assert_eq!(
+            cookie.to_string(),
+            "id=a3fWa; Expires=Wed, 21 Oct 2015 07:28:01 GMT"
+        );
+    }
+
+    #[test]
+    fn test_cookie_max_age_serialisation() {
+        let mut cookie = SetCookie::new("id".to_string(), "a3fWa".to_string());
+
+        cookie.set_max_age(Duration::minutes(1));
+
+        assert_eq!(cookie.to_string(), "id=a3fWa; Max-Age=60");
+    }
 
     #[test]
     fn test_server_error_no_status() {
@@ -255,9 +492,11 @@ mod tests {
 
     #[test]
     fn test_cookie() {
+        let mut cookie = SetCookie::new("a".to_string(), "b".to_string());
+        cookie.set_max_age(Duration::seconds(1));
         let response = ResponseBuilder::new()
             .set_status_code(StatusCode::Continue)
-            .add_cookie("a", "b", Duration::seconds(1))
+            .add_cookie(cookie)
             .build();
         let expected = "HTTP/1.1 100 Continue\r\nSet-Cookie: a=b; Max-Age=1\r\n\r\n";
         assert_eq!(&response,expected)
