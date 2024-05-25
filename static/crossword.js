@@ -46,14 +46,16 @@ class CrosswordGrid extends HTMLElement {
                 this.scale = 30
                 this.activeClue = null;
                 this.connect()
-                
                 this.fetchAllData().then(() => {
+                    this.setUpGridListener()
                 });
+                
+                
             })
 
     }
 
-    async fetchCellData() {
+    async fetchAllData() {
         fetch(`${this.src}/data`)
             .then(response => {
                 if (!response.ok) {
@@ -63,20 +65,16 @@ class CrosswordGrid extends HTMLElement {
             })
             .then(data => {
                 this.data = data
-                this.drawFreshGrid()
-            })
-    }
+                this.cells = new Map();
+                this.downHintsData = []
+                this.acrossHintsData = []
+        
+                this.grid.replaceChildren()
+                
+                this.acrossHints.replaceChildren()
+                this.downHints.replaceChildren()
+                this.activeClue = null
 
-    async fetchAllData() {
-        fetch(`${this.src}/data`, {cache: "no-store"})
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error("Failed to get crossword data")
-                }
-                return response.json();
-            })
-            .then(data => {
-                this.data = data
                 let size = 0
                 for (let key in this.data["across"]) {
                     let clue = this.data["across"][key]
@@ -91,61 +89,58 @@ class CrosswordGrid extends HTMLElement {
                 }
                 this.scale = 100 / (size + 1)
 
-                this.drawFreshGrid()
+                this.drawGrid()
                 this.drawHints()
 
                 this.grid.tabIndex = 0
 
-                this.grid.addEventListener('keyup', (key) => {
-                    if (this.activeClue === null) {
 
-                    } else {
-                        this.activeClue.highlight()
-                        let cell;
-                        switch (key.key) {
-                            case "Backspace":
-                                this.activeClue.getActiveCell().updateText(" ");
-                                this.ws.send(this.activeClue.getActiveCell().getCellData())
-                                cell = this.activeClue.backwardCellIterator.next().value;
-                                this.activeClue.setActiveCell(cell);
-                                break;
-                            case "ArrowRight":
-                            case 'ArrowDown':
-                                cell = this.activeClue.forwardCellIterator.next().value;
-                                this.activeClue.setActiveCell(cell);
-                                break;
-                            case "ArrowLeft":
-                            case 'ArrowUp':
-                                cell = this.activeClue.backwardCellIterator.next().value;
-                                this.activeClue.setActiveCell(cell);
-                                break;
-                            default:
-                                if (/^[a-zA-Z]$/.test(key.key)) {
-                                    this.activeClue.getActiveCell().updateText(key.key);
-                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
-                                    cell = this.activeClue.forwardCellIterator.next().value;
-                                    this.activeClue.setActiveCell(cell);
-                                }
-                                else {
-                                    cell = this.activeClue.getActiveCell()
-                                    this.activeClue.setActiveCell(cell);
-
-                                }
-                        }
-                    }
-                })
             })
     }
 
+    setUpGridListener = () => {
+        this.grid.addEventListener('keyup', (key) => {
+            if (this.activeClue === null) {
 
-    drawFreshGrid = () => {
-        this.downHintsData = []
-        this.acrossHintsData = []
-        this.cells = new Map();
+            } else {
+                this.activeClue.highlight()
+                let cell;
+                switch (key.key) {
+                    case "Backspace":
+                        this.activeClue.getActiveCell().updateText(" ");
+                        this.ws.send(this.activeClue.getActiveCell().getCellData())
+                        cell = this.activeClue.backwardCellIterator.next().value;
+                        this.activeClue.setActiveCell(cell);
+                        break;
+                    case "ArrowRight":
+                    case 'ArrowDown':
+                        cell = this.activeClue.forwardCellIterator.next().value;
+                        this.activeClue.setActiveCell(cell);
+                        break;
+                    case "ArrowLeft":
+                    case 'ArrowUp':
+                        cell = this.activeClue.backwardCellIterator.next().value;
+                        this.activeClue.setActiveCell(cell);
+                        break;
+                    default:
+                        if (/^[a-zA-Z]$/.test(key.key)) {
+                            this.activeClue.getActiveCell().updateText(key.key);
+                            this.ws.send(this.activeClue.getActiveCell().getCellData())
+                            cell = this.activeClue.forwardCellIterator.next().value;
+                            this.activeClue.setActiveCell(cell);
+                        }
+                        else {
+                            cell = this.activeClue.getActiveCell()
+                            this.activeClue.setActiveCell(cell);
 
-        this.grid.replaceChildren()
-        this.acrossHints.replaceChildren()
-        this.downHints.replaceChildren()
+                        }
+                }
+            }
+        })
+    }
+
+    drawGrid = () => {
+
 
         for (let incomingClueName in this.data.across) {
             let incomingClueData = this.data.across[incomingClueName];
