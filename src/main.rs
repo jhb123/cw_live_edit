@@ -255,7 +255,6 @@ fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> R
                     context.insert("data", "Logged In");
                 },
                 Err(e) => {
-                    error!("Not logged in");
                     context.insert("data", &e)
                 },
             };
