@@ -9,7 +9,7 @@ use log::{error, trace};
 
 use crate::HttpRequest;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub enum OpCode {
     Continuation,
     Text,
@@ -62,7 +62,6 @@ impl TryFrom<u8> for OpCode {
     
 }
 
-#[derive(Debug, Clone)]
 pub struct Message {
     pub opcode: OpCode,
     pub body: Vec<u8>,
@@ -77,6 +76,8 @@ impl Message {
         // this always has fin bit = 1
         // this has no masking key
 
+        let fin_bit = true;
+
         let mut raw_data: Vec<u8> = Vec::new();
         // finbit = true.
         // first byte.
@@ -84,43 +85,32 @@ impl Message {
         let fin_bit: u8 = 0b1000_0000;
         raw_data.push(fin_bit | op_code);
 
+        let max_u16 = u16::MAX as usize;
+
         let len = body.len();
         match len {
             0..=125 => raw_data.push(len.try_into().unwrap()),
-            126..=65535 => {
+            x if 125 < x &&  x < u16::MAX as usize => {
                 let len = (len as u16).to_le_bytes();
                 raw_data.push(126);
                 raw_data.extend(len.iter());
             }
-            65536..= 4294967295=> {
+            x if max_u16 < x &&  x < u32::MAX as usize => {
                 let len = (len as u32).to_le_bytes();
                 raw_data.push(127);
                 raw_data.extend(len.iter());
             }
-            x if x > 4294967295 => {
+            x  if x > u32::MAX as usize => {
                 todo!("make a proper error")
             }
-            4294967296_usize.. => todo!()
         }
-        raw_data.extend(body.iter());
-        
         Self { opcode, body, masking_key: [0; 4], fin_bit, len, raw_data  }
     }
 
-    pub fn new_from_str(body: &str) -> Self {
+    fn new_from_str(body: &str) -> Self {
         return Self::new(OpCode::Text, body.as_bytes().to_vec())
     }
-
-    pub fn ping_message() -> Self {
-        return Self::new(OpCode::Ping, "ping".as_bytes().to_vec())
-    }
-
-    pub fn to_vec(self) ->  Vec<u8> {
-        return self.into()
-    }
-
 }
-
 
 impl Into<Vec<u8>> for Message {
 
@@ -131,76 +121,15 @@ impl Into<Vec<u8>> for Message {
 
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct MessageDecodeError{
-    msg: &'static str
-}
+pub struct MessageDecodeError;
 
-
-impl TryFrom<Vec<u8>> for Message {
+impl TryFrom::<Vec<u8>> for Message {
     type Error = MessageDecodeError;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        // see  RFC 6455: https://www.rfc-editor.org/rfc/rfc6455.html#section-5.3
-        let frame_header = &value[0..2];
-        let opcode_u8 = (frame_header[0] & 0b0000_1111) as u8;
-        let opcode = match OpCode::try_from(opcode_u8){
-            Ok(x) => x,
-            Err(code) => {
-                        return Err(MessageDecodeError{msg: "client send unexpected opcode"})
-                }
-        };
-
-        let mut payload_len = (frame_header[1] & 0b0111_1111) as u64;
-        let mut masking_key: &[u8];
-        let mut rec_msg: &[u8];
-
-        match payload_len {
-            0..=125 => {
-                masking_key = &value[2..6];
-                rec_msg= &value[6..(payload_len as usize)];
-            }
-            126 => {
-                // frame_header = vec![0; 6];
-                // buf_reader.read_exact(&mut frame_header)?;
-                // payload_len = websocket_content_len(&frame_header[0..2])?;
-                payload_len =  websocket_content_len(&value[2..4]).unwrap();
-                masking_key =  &value[4..8];
-                rec_msg= &value[8..(payload_len as usize)];
-            }
-            127 => {
-                // frame_header = vec![0; 12];
-                // buf_reader.read_exact(&mut frame_header)?;
-                // payload_len = websocket_content_len(&frame_header[0..8])?;
-                payload_len =  websocket_content_len(&value[2..10]).unwrap();
-                masking_key =  &value[10..14];
-                rec_msg= &value[14..(payload_len as usize)];
-                // masking_key.copy_from_slice(&frame_header[8..12]);
-            }
-            128..=u64::MAX => {
-                panic!("The 7 bits which encode the logic for the payload length cannot be greater than 127")
-            }
-        }
-
-        trace!("full payload len: {}", payload_len);
-        trace!("masking key: {:02X?}", masking_key);
-
-
-
-        let mut rec_msg = vec![0; payload_len as usize];
-
-        let decoded: Vec<u8> = rec_msg
-            .iter()
-            .enumerate()
-            .map(|(index, el)| el ^ masking_key[index % 4])
-            .collect();
-
-        let msg = Message::new(opcode, decoded);
-
-        return Ok(msg);
-
+        todo!()
     }
-}
-
+} 
 
 pub fn ping_message() -> Vec<u8> {
     let mut payload: Vec<u8> = Vec::new();
@@ -368,7 +297,7 @@ pub fn websocket_handshake(req: &HttpRequest) -> Result<String, Error> {
 
 #[cfg(test)]
 mod tests {
-    use crate::websockets::{ping_message, web_socket_accept, Message};
+    use crate::websockets::{ping_message, web_socket_accept, websocket_message, Message};
 
     #[test]
     fn web_socket_accept_header() {

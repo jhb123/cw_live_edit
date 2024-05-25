@@ -2,8 +2,12 @@ class CrosswordGrid extends HTMLElement {
 
     constructor() {
         super();
-        const shadowRoot = this.attachShadow({ mode: 'closed' })
+        const shadowRoot = this.attachShadow({ mode: 'open' })
 
+        this.src = this.getAttribute('src') || ''
+
+        this.loc = window.location.host + this.src
+        
         fetch(`/crossword.html`)
             .then(response => {
                 if (!response.ok) {
@@ -29,40 +33,38 @@ class CrosswordGrid extends HTMLElement {
                 this.keyboard = shadowRoot.getElementById('keyboard')
                 this.createKeyBoard()
 
+                // this.data = null;
 
-                this.data = null;
-
-                this.downHintsData = []
-                this.acrossHintsData = []
+                // this.downHintsData = []
+                // this.acrossHintsData = []
 
                 this.scale = 30
-                this.cells = new Map();
                 this.activeClue = null;
-
-                this.src = this.getAttribute('src') || ''
-
-                let loc = window.location.host + this.src
-
-                this.ws = new WebSocket("wss://" + loc + '/live')
-
-                // Connection opened
-                this.ws.addEventListener("open", (event) => {
-                    this.ws.send("Hello Server!");
-                });
-
-                // Listen for messages
-                this.ws.addEventListener("message", (event) => {
-                    let message = JSON.parse(event.data);
-                    this.handleUpdateTextFromServer(message)
-                });
-
-                this.fetchData().then(() => {
+                this.connect()
+                
+                this.fetchAllData().then(() => {
                 });
             })
 
     }
 
-    async fetchData() {
+    async fetchCellData() {
+        console.log("fetching data")
+        fetch(`${this.src}/data`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Failed to get crossword data")
+                }
+                return response.json();
+            })
+            .then(data => {
+                this.data = data
+                this.drawFreshGrid()
+            })
+    }
+
+    async fetchAllData() {
+        console.log("fetching data")
         fetch(`${this.src}/data`)
             .then(response => {
                 if (!response.ok) {
@@ -87,6 +89,8 @@ class CrosswordGrid extends HTMLElement {
                 this.scale = 100 / (size + 1)
 
                 this.drawFreshGrid()
+                this.drawHints()
+
                 this.grid.tabIndex = 0
 
                 this.grid.addEventListener('keyup', (key) => {
@@ -131,7 +135,16 @@ class CrosswordGrid extends HTMLElement {
     }
 
 
-    drawFreshGrid() {
+    drawFreshGrid = () => {
+        this.downHintsData = []
+        this.acrossHintsData = []
+        this.cells = new Map();
+
+        this.grid.replaceChildren()
+        this.acrossHints.replaceChildren()
+        this.downHints.replaceChildren()
+
+        console.log("drawing fresh grid")
         for (let incomingClueName in this.data.across) {
             let incomingClueData = this.data.across[incomingClueName];
             this.handleIncomingClue(incomingClueName, this.acrossHintsData, incomingClueData);
@@ -141,19 +154,16 @@ class CrosswordGrid extends HTMLElement {
             let incomingClueData = this.data.down[incomingClueName];
             this.handleIncomingClue(incomingClueName, this.downHintsData, incomingClueData);
         }
-
-        this.drawHints()
-
     }
 
-    handleUpdateTextFromServer(new_cell) {
+    handleUpdateTextFromServer = (new_cell) => {
         let key = `${new_cell.x},${new_cell.y}`
         let cell = this.cells.get(key)
         cell.text = new_cell.c
         cell.updateText(new_cell.c)
     }
 
-    sortfn(a, b) {
+    sortfn = (a, b) => {
         const numA = parseInt(a.name);
         const numB = parseInt(b.name);
         if (numA < numB) {
@@ -165,7 +175,7 @@ class CrosswordGrid extends HTMLElement {
         }
     }
 
-    drawHints() {
+    drawHints = () => {
         this.acrossHintsData.sort(this.sortfn)
         this.downHintsData.sort(this.sortfn)
         this.acrossHintsData.forEach(clue => {
@@ -180,7 +190,7 @@ class CrosswordGrid extends HTMLElement {
 
     }
 
-    handleIncomingClue(incomingClueName, clueDirection, incomingClueData) {
+    handleIncomingClue = (incomingClueName, clueDirection, incomingClueData) => {
         clueDirection.push({ name: incomingClueName, value: incomingClueData["hint"] });
         let clue = new Clue(incomingClueName);
         for (let incomingCellData in incomingClueData.cells) {
@@ -189,8 +199,7 @@ class CrosswordGrid extends HTMLElement {
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
-                    var childNodes = this.grid.childNodes;
-                    // console.log(childNodes)
+                    const childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
                         if (node.nodeType === 1 && node.classList.contains("cell")) {
                             node.style.background = "#ffffffff";
@@ -210,7 +219,7 @@ class CrosswordGrid extends HTMLElement {
         clue.cells[0].cell_num.innerText = incomingClueName.slice(0,-1)
     }
 
-    createHintElement(clueName, clueData) {
+    createHintElement = (clueName, clueData) => {
         let hintEl = document.createElement('tr');
         hintEl.innerHTML =
             `<td class="clue-hint-num">${clueName}</td>
@@ -219,7 +228,7 @@ class CrosswordGrid extends HTMLElement {
         return hintEl;
     }
 
-    createKeyBoard() {
+    createKeyBoard = () => {
         navigator.userAgent
         console.log(navigator.userAgent)
         
@@ -256,6 +265,50 @@ class CrosswordGrid extends HTMLElement {
 
             
         }
+    }
+
+    connect() {
+        this.ws = new WebSocket("ws://" + this.loc + '/live')
+        this.ws.addEventListener("message", (event) => {
+            let message = JSON.parse(event.data);
+            this.handleUpdateTextFromServer(message)
+        });
+
+        this.ws.addEventListener("close", (event) => {
+            console.log("Closed")
+            this.ws = null
+            this.reconnect()
+        });
+
+        // this.checkWebSocketState(this.grid);
+    }
+
+    reconnect() {
+        this.connect()
+        this.fetchAllData().then(()=>{})
+    }
+
+
+    checkWebSocketState = (indicator) => {
+        
+        const ws = this.ws
+        function updateStatusIndicator(indicator) {
+            // console.log(ws.readyState)
+            if (ws.readyState === WebSocket.OPEN) {
+                indicator.style.backgroundColor = 'black';
+                return true
+            } else {
+                indicator.style.backgroundColor = 'red';
+                return false
+            }
+        }
+        updateStatusIndicator(indicator);    
+        let intervalId = setInterval(function() {
+            let isConnected = updateStatusIndicator(indicator);
+            if (!isConnected){
+                clearInterval(intervalId);
+            }
+        }, 100); // Check every 3 seconds
     }
 }
 

@@ -338,7 +338,10 @@ impl<T: Display> Display for SetCookie<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use chrono::{Duration, NaiveDate};
+    use super::SameSite;
     use super::SetCookie;
     use super::StatusCode;
     use super::ResponseBuilder;

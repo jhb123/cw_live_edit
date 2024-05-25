@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+
+{% block title %}Test{% endblock %}
+{% block page_name %}{{name}}{% endblock %}
+
+{% block content %}
+<button hx-get="add-client-test" hx-swap="beforeend" hx-target="#test-area">Add client</button>
+<div id="test-area" style="display: grid;  grid-template-columns: auto auto auto; grid-gap: 0; padding: 0;
+"></div>
+{% endblock %}
