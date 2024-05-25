@@ -41,7 +41,7 @@
 }
 
 .flex-container-big {
-    position: relative;
+    position: absolute;
     display: flex;
     width: fit-content;
     flex-direction: column;
