@@ -9,7 +9,7 @@ class CrosswordGrid extends HTMLElement {
         this.loc = window.location.host + this.src
 
                 
-        fetch(`/crossword.html`)
+        fetch(`/crossword.html`, {cache: "no-store"})
             .then(response => {
                 if (!response.ok) {
                     throw new Error("Failed to get crossword data")
