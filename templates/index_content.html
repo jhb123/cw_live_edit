@@ -11,6 +11,9 @@
 <li><a href="/puzzle/{{puzzle.id}}">Puzzle {{puzzle.name}}</a></li>
 {% endfor %}
 </ul>
+<hr>
+<h2>Test area</h2>
+<a href="/client-test">Client test</a> 
 <dialog id="signUpDialog">
     <form id="signUp"  hx-post='/sign-up' hx-swap="innerHTML" hx-target="#page-content">
         <label for="usernameSignUp">Choose username</label>

@@ -46,12 +46,11 @@
     width: fit-content;
     flex-direction: column;
     max-height: 90vh;
+    top: 10vh;
     box-sizing: border-box;
     right: 0;
     left: 0;
-    bottom: 0;
-    top: 10vh;
-    
+    bottom: 0;    
 }   
 
 .clues {
@@ -127,4 +126,10 @@
     flex-grow: 1;
     margin: 2px 2px;
     font-size: x-large;
+}
+
+:popover-open {
+    position: relative;
+    bottom: 50%;
+    right: 50%;
 }

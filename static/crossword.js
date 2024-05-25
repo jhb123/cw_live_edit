@@ -2,9 +2,14 @@ class CrosswordGrid extends HTMLElement {
 
     constructor() {
         super();
-        const shadowRoot = this.attachShadow({ mode: 'closed' })
+        const shadowRoot = this.attachShadow({ mode: 'open' })
 
-        fetch(`/crossword.html`)
+        this.src = this.getAttribute('src') || ''
+
+        this.loc = window.location.host + this.src
+
+                
+        fetch(`/crossword.html`, {cache: "no-store"})
             .then(response => {
                 if (!response.ok) {
                     throw new Error("Failed to get crossword data")
@@ -18,7 +23,7 @@ class CrosswordGrid extends HTMLElement {
                 template.innerHTML = template_data;
                 shadowRoot.appendChild(template.content.cloneNode(true));
                 this.grid = shadowRoot.getElementById('crossword')
-                
+
                 this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
                 this.acrossHints = shadowRoot.getElementById('across-hints')
 
@@ -27,43 +32,39 @@ class CrosswordGrid extends HTMLElement {
 
                 this.clues_div = shadowRoot.getElementById('clues')
                 this.keyboard = shadowRoot.getElementById('keyboard')
+
+                this.closeBtn = shadowRoot.getElementById('close-btn')
+                this.wsStatus = shadowRoot.getElementById("ws-status");
+
                 this.createKeyBoard()
 
+                // this.data = null;
 
-                this.data = null;
-
-                this.downHintsData = []
-                this.acrossHintsData = []
+                // this.downHintsData = []
+                // this.acrossHintsData = []
 
                 this.scale = 30
-                this.cells = new Map();
                 this.activeClue = null;
-
-                this.src = this.getAttribute('src') || ''
-
-                let loc = window.location.host + this.src
-
-                this.ws = new WebSocket("wss://" + loc + '/live')
-
-                // Connection opened
-                this.ws.addEventListener("open", (event) => {
-                    this.ws.send("Hello Server!");
+                this.connect()
+                this.fetchAllData().then(() => {
+                    this.setUpGridListener()
                 });
+            });
+        
+            window.addEventListener('online', this.handleOnline.bind(this));
 
-                // Listen for messages
-                this.ws.addEventListener("message", (event) => {
-                    let message = JSON.parse(event.data);
-                    this.handleUpdateTextFromServer(message)
-                });
-
-                this.fetchData().then(() => {
-                });
-            })
 
     }
 
-    async fetchData() {
-        fetch(`${this.src}/data`)
+    handleOnline(event) {
+        console.log("You're online");
+        this.fetchAllData().then(() => {
+            //this.setUpGridListener()
+        });
+    }
+
+    async fetchAllData() {
+        fetch(`${this.src}/data`, {cache: "no-store"})
             .then(response => {
                 if (!response.ok) {
                     throw new Error("Failed to get crossword data")
@@ -72,6 +73,16 @@ class CrosswordGrid extends HTMLElement {
             })
             .then(data => {
                 this.data = data
+                this.cells = new Map();
+                this.downHintsData = []
+                this.acrossHintsData = []
+        
+                this.grid.replaceChildren()
+                
+                this.acrossHints.replaceChildren()
+                this.downHints.replaceChildren()
+                this.activeClue = null
+
                 let size = 0
                 for (let key in this.data["across"]) {
                     let clue = this.data["across"][key]
@@ -86,52 +97,59 @@ class CrosswordGrid extends HTMLElement {
                 }
                 this.scale = 100 / (size + 1)
 
-                this.drawFreshGrid()
+                this.drawGrid()
+                this.drawHints()
+
                 this.grid.tabIndex = 0
 
-                this.grid.addEventListener('keyup', (key) => {
-                    if (this.activeClue === null) {
 
-                    } else {
-                        this.activeClue.highlight()
-                        let cell;
-                        switch (key.key) {
-                            case "Backspace":
-                                this.activeClue.getActiveCell().updateText(" ");
-                                this.ws.send(this.activeClue.getActiveCell().getCellData())
-                                cell = this.activeClue.backwardCellIterator.next().value;
-                                this.activeClue.setActiveCell(cell);
-                                break;
-                            case "ArrowRight":
-                            case 'ArrowDown':
-                                cell = this.activeClue.forwardCellIterator.next().value;
-                                this.activeClue.setActiveCell(cell);
-                                break;
-                            case "ArrowLeft":
-                            case 'ArrowUp':
-                                cell = this.activeClue.backwardCellIterator.next().value;
-                                this.activeClue.setActiveCell(cell);
-                                break;
-                            default:
-                                if (/^[a-zA-Z]$/.test(key.key)) {
-                                    this.activeClue.getActiveCell().updateText(key.key);
-                                    this.ws.send(this.activeClue.getActiveCell().getCellData())
-                                    cell = this.activeClue.forwardCellIterator.next().value;
-                                    this.activeClue.setActiveCell(cell);
-                                }
-                                else {
-                                    cell = this.activeClue.getActiveCell()
-                                    this.activeClue.setActiveCell(cell);
-
-                                }
-                        }
-                    }
-                })
             })
     }
 
+    setUpGridListener = () => {
+        this.grid.addEventListener('keyup', (key) => {
+            if (this.activeClue === null) {
 
-    drawFreshGrid() {
+            } else {
+                this.activeClue.highlight()
+                let cell;
+                switch (key.key) {
+                    case "Backspace":
+                        this.activeClue.getActiveCell().updateText(" ");
+                        this.ws.send(this.activeClue.getActiveCell().getCellData())
+                        cell = this.activeClue.backwardCellIterator.next().value;
+                        this.activeClue.setActiveCell(cell);
+                        break;
+                    case "ArrowRight":
+                    case 'ArrowDown':
+                        cell = this.activeClue.forwardCellIterator.next().value;
+                        this.activeClue.setActiveCell(cell);
+                        break;
+                    case "ArrowLeft":
+                    case 'ArrowUp':
+                        cell = this.activeClue.backwardCellIterator.next().value;
+                        this.activeClue.setActiveCell(cell);
+                        break;
+                    default:
+                        if (/^[a-zA-Z]$/.test(key.key)) {
+                            this.activeClue.getActiveCell().updateText(key.key);
+                            this.ws.send(this.activeClue.getActiveCell().getCellData())
+                            cell = this.activeClue.forwardCellIterator.next().value;
+                            this.activeClue.setActiveCell(cell);
+                        }
+                        else {
+                            cell = this.activeClue.getActiveCell()
+                            this.activeClue.setActiveCell(cell);
+
+                        }
+                }
+            }
+        })
+    }
+
+    drawGrid = () => {
+
+
         for (let incomingClueName in this.data.across) {
             let incomingClueData = this.data.across[incomingClueName];
             this.handleIncomingClue(incomingClueName, this.acrossHintsData, incomingClueData);
@@ -141,19 +159,16 @@ class CrosswordGrid extends HTMLElement {
             let incomingClueData = this.data.down[incomingClueName];
             this.handleIncomingClue(incomingClueName, this.downHintsData, incomingClueData);
         }
-
-        this.drawHints()
-
     }
 
-    handleUpdateTextFromServer(new_cell) {
+    handleUpdateTextFromServer = (new_cell) => {
         let key = `${new_cell.x},${new_cell.y}`
         let cell = this.cells.get(key)
         cell.text = new_cell.c
         cell.updateText(new_cell.c)
     }
 
-    sortfn(a, b) {
+    sortfn = (a, b) => {
         const numA = parseInt(a.name);
         const numB = parseInt(b.name);
         if (numA < numB) {
@@ -165,7 +180,7 @@ class CrosswordGrid extends HTMLElement {
         }
     }
 
-    drawHints() {
+    drawHints = () => {
         this.acrossHintsData.sort(this.sortfn)
         this.downHintsData.sort(this.sortfn)
         this.acrossHintsData.forEach(clue => {
@@ -180,7 +195,7 @@ class CrosswordGrid extends HTMLElement {
 
     }
 
-    handleIncomingClue(incomingClueName, clueDirection, incomingClueData) {
+    handleIncomingClue = (incomingClueName, clueDirection, incomingClueData) => {
         clueDirection.push({ name: incomingClueName, value: incomingClueData["hint"] });
         let clue = new Clue(incomingClueName);
         for (let incomingCellData in incomingClueData.cells) {
@@ -189,8 +204,7 @@ class CrosswordGrid extends HTMLElement {
             if (!this.cells.has(key)) {
                 let cell = new Cell(cellData, this.scale);
                 cell.div.addEventListener('click', () => {
-                    var childNodes = this.grid.childNodes;
-                    // console.log(childNodes)
+                    const childNodes = this.grid.childNodes;
                     childNodes.forEach(node => {
                         if (node.nodeType === 1 && node.classList.contains("cell")) {
                             node.style.background = "#ffffffff";
@@ -210,7 +224,7 @@ class CrosswordGrid extends HTMLElement {
         clue.cells[0].cell_num.innerText = incomingClueName.slice(0,-1)
     }
 
-    createHintElement(clueName, clueData) {
+    createHintElement = (clueName, clueData) => {
         let hintEl = document.createElement('tr');
         hintEl.innerHTML =
             `<td class="clue-hint-num">${clueName}</td>
@@ -219,9 +233,8 @@ class CrosswordGrid extends HTMLElement {
         return hintEl;
     }
 
-    createKeyBoard() {
+    createKeyBoard = () => {
         navigator.userAgent
-        console.log(navigator.userAgent)
         
         if (navigator.userAgent.includes("Mobile")) {
             this.clues_div.style.maxHeight = "calc(100% - 500px)"
@@ -256,6 +269,73 @@ class CrosswordGrid extends HTMLElement {
 
             
         }
+    }
+
+    connect() {
+        // try {
+        const protocol = window.location.protocol
+        if( protocol === "http:"){
+            this.ws = new WebSocket("ws://" + this.loc + '/live')
+
+        } else {
+            this.ws = new WebSocket("wss://" + this.loc + '/live')
+        }
+
+
+        this.ws.addEventListener("message", (event) => {
+            let message = JSON.parse(event.data);
+            this.handleUpdateTextFromServer(message)
+        });
+
+        this.ws.addEventListener("close", (event) => {
+            this.ws = null
+            this.wsStatus.showModal()
+            this.reconnect()
+        });
+
+        this.ws.addEventListener("open", (event) => {
+            this.wsStatus.close()
+            this.checkWebSocketState(this.grid);
+        });
+
+        try{
+            this.closeBtn.addEventListener("click", () =>{
+                this.ws.close()
+            })
+        } catch(error) {
+            console.info("debugging elements not found")
+        }
+
+    }
+
+    reconnect() {
+        this.connect()
+        this.fetchAllData().then(()=>{})
+    }
+
+
+    checkWebSocketState = (indicator) => {
+        
+        const ws = this.ws
+        const modal = this.wsStatus
+        function updateStatusIndicator(indicator) {
+            // console.log(ws.readyState)
+            if (ws.readyState === WebSocket.OPEN) {
+                indicator.style.backgroundColor = 'black';
+                return true
+            } else {
+                indicator.style.backgroundColor = 'red';
+                modal.showModal()
+                return false
+            }
+        }
+        updateStatusIndicator(indicator);    
+        let intervalId = setInterval(function() {
+            let isConnected = updateStatusIndicator(indicator);
+            if (!isConnected){
+                clearInterval(intervalId);
+            }
+        }, 100); // Check every 3 seconds
     }
 }
 

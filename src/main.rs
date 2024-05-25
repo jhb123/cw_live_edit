@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, validate_password}, get_form_data, get_login_cookies, is_authorised, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, websocket_message, OpCode}, HttpRequest, ThreadPool
+    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, validate_password}, get_form_data, get_login_cookies, is_authorised, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, Message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, trace, warn};
@@ -15,7 +15,13 @@ use tera::Tera;
 
 lazy_static! {
     static ref PUZZLEPOOL: Mutex<PuzzlePool> = Mutex::new(PuzzlePool::new());
-    static ref THREADPOOL: ThreadPool = ThreadPool::new(32);
+    static ref THREADPOOL: ThreadPool = {
+        let num_threads = env::var("PUZZLE_THREADS")
+            .unwrap_or_else(|_| "32".to_string())
+            .parse::<usize>()
+            .expect("CW_THREADS must be a valid number");
+            ThreadPool::new(num_threads)
+    };
 }
 
 struct HandlerError {
@@ -63,6 +69,9 @@ fn main() {
     routes.insert(r"^/sign-up", sign_up_handler);
     routes.insert(r"^/log-in", log_in_handler);
     routes.insert(r"^/log-out", log_out_handler);
+
+    routes.insert(r"^/client-test", client_test_handler);
+    routes.insert(r"^/add-client-test", add_client_test_handler);
 
 
 
@@ -246,7 +255,6 @@ fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> R
                     context.insert("data", "Logged In");
                 },
                 Err(e) => {
-                    error!("Not logged in");
                     context.insert("data", &e)
                 },
             };
@@ -588,6 +596,59 @@ fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
     }    
 }
 
+fn client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    // acquire the html of the page.
+    // let status_line = match req {
+    //     HttpRequest::Get { status_line, .. } => status_line,
+    //     HttpRequest::Post { status_line, .. } => status_line,
+    // };
+
+
+    let mut context = tera::Context::new();
+    context.insert("name", "Test clients");
+
+    let contents = match tera.render("client_test.html", &context){
+        Ok(contents) => contents,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_html_content(contents)
+        .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
+}
+
+fn add_client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    // acquire the html of the page.
+    // let status_line = match req {
+    //     HttpRequest::Get { status_line, .. } => status_line,
+    //     HttpRequest::Post { status_line, .. } => status_line,
+    // };
+
+
+    let mut context = tera::Context::new();
+    context.insert("src", "/puzzle/1");
+
+    let contents = match tera.render("client_test_grid.html", &context){
+        Ok(contents) => contents,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_html_content(contents)
+        .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
+}
 
 
 fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
@@ -858,11 +919,11 @@ impl PuzzlePool {
     }
 }
 
-type ThreadSafeSenderVector = Arc<Mutex<Vec<Arc<mpsc::Sender<Vec<u8>>>>>>;
+type ThreadSafeSenderVector = Arc<Mutex<Vec<Arc<Sender<Message>>>>>;
 
 #[derive(Debug)]
 struct PuzzleChannel {
-    channel_wide_sender: Arc<mpsc::Sender<Vec<u8>>>,
+    channel_wide_sender: Arc<Sender<Message>>,
     clients: ThreadSafeSenderVector,
     terminate_sender: mpsc::Sender<bool>,
     crossword: Arc<Mutex<Crossword>>,
@@ -874,7 +935,7 @@ impl PuzzleChannel {
     fn new(puzzle_num: String) -> Result<Option<Self>, Error> {
         let puzzle_num_clone = puzzle_num.clone();
 
-        let (sender, receiver) = mpsc::channel::<Vec<u8>>();
+        let (sender, receiver) = mpsc::channel::<Message>();
 
         let (terminate_sender, terminate_rec) = mpsc::channel();
 
@@ -904,37 +965,24 @@ impl PuzzleChannel {
                 }
 
                 let msg = match receiver.recv() {
-                    Ok(d) => Arc::new(d),
+                    Ok(d) => d,
                     Err(e) => {
                         error!("There was an error recieving data: {e}");
                         break;
                     }
                 };
-                
-                match String::from_utf8(msg.to_vec()) {
-                    Ok(client_data) => {
-                        let incoming_data: Result<Cell, serde_json::Error>  = serde_json::from_str(&client_data);
-                        match incoming_data {
-                            Ok(deserialised) => {
-                                match crossword_clone.lock() {
-                                    Ok(mut guard) => guard.update_cell(deserialised),
-                                    Err(e)  => {
-                                        warn!("puzzle {} is poisoned, but we're sending the data anyway", puzzle_num);
-                                        e.into_inner().update_cell(deserialised)
-                                    }
-                                }
-                                
-                            },
-                            Err(_) => {
-                                warn!("cannot deserialise")
-                            },
-                        }
-                        
-                    },
-                    Err(e) => info!("{}", e),
-                }
 
                 let msg_clone = msg.clone();
+                
+                match msg_clone.opcode {
+                    OpCode::Continuation => todo!(),
+                    OpCode::Text => send_msg_to_clients(&msg, &crossword_clone, &puzzle_num),
+                    OpCode::Binary => todo!(),
+                    OpCode::Reserved(_) => todo!(),
+                    OpCode::Close => trace!("Close"),
+                    OpCode::Ping => trace!("Ping"),
+                    OpCode::Pong => trace!("Pong"),
+                }
 
                 clients_clone
                     .lock()
@@ -943,9 +991,10 @@ impl PuzzleChannel {
                         err.into_inner()
                     })
                     .iter()
-                    .filter_map(|x| x.send(msg_clone.to_vec()).err())
+                    .filter_map(|x| x.send( msg.clone() ).err())
                     .for_each(drop);
-            }
+                }
+            
             info!("finishing");
             PUZZLEPOOL.lock().unwrap_or_else(|err| {
                 warn!("This mutex is in a poisoned state, but we're attempting to remove the channel anyway");
@@ -976,7 +1025,7 @@ impl PuzzleChannel {
         }))
     }
 
-    fn add_new_client(&mut self, sender: Arc<Sender<Vec<u8>>>) {
+    fn add_new_client(&mut self, sender: Arc<Sender<Message>>) {
         info!("adding new client to senders");
         self.clients.lock().unwrap_or_else(|err| {
             warn!("This mutex is in a poisoned state, but we're attempting to add a new client anyway");
@@ -984,7 +1033,7 @@ impl PuzzleChannel {
         }).push(sender)
     }
 
-    fn remove_client(&mut self, sender: &Arc<Sender<Vec<u8>>>) {
+    fn remove_client(&mut self, sender: &Arc<Sender<Message>>) {
         let mut clients = self.clients.lock().unwrap_or_else(|err| {
             warn!("This mutex is in a poisoned state, but we're attempting to remove the client anyway");
             err.into_inner()
@@ -1033,6 +1082,32 @@ impl PuzzleChannel {
 
 }
 
+fn send_msg_to_clients(msg: &Message, crossword_clone: &Arc<Mutex<Crossword>>, puzzle_num: &String) {
+    match String::from_utf8(msg.clone().body) {
+        Ok(client_data) => {
+            info!("decoded incoming data: {}", client_data);
+            let incoming_data: Result<Cell, serde_json::Error>  = serde_json::from_str(&client_data);
+            match incoming_data {
+                Ok(deserialised) => {
+                    match crossword_clone.lock() {
+                        Ok(mut guard) => guard.update_cell(deserialised),
+                        Err(e)  => {
+                            warn!("puzzle {} is poisoned, but we're sending the data anyway", puzzle_num);
+                            e.into_inner().update_cell(deserialised)
+                        }
+                    }
+                
+                },
+                Err(_) => {
+                    warn!("cannot deserialise into cell data")
+                },
+            }
+        
+        },
+        Err(e) => warn!("tried to decode, but there was an error: {}", e),
+    }
+}
+
 impl Drop for PuzzleChannel {
     fn drop(&mut self) {
 
@@ -1063,7 +1138,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
     let _ = stream.set_read_timeout(Some(Duration::from_millis(10)));
     
     let stream_arc = Arc::new(Mutex::new(stream));
-    let (sender, receiver) = mpsc::channel::<Vec<u8>>();
+    let (sender, receiver) = mpsc::channel::<Message>();
 
     let (terminate_sender, terminate_rec) = mpsc::channel();
 
@@ -1086,9 +1161,34 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
             return server_error(tera, stream_clone)
         }
     };
-    
-        
-    // let mut set = HashMap::new();
+
+    let heartbeat_channel_wide_sender = match puzzle_channel.lock(){
+        Ok(guard) => guard.channel_wide_sender.clone(),
+        Err(e) => {
+            error!("Could not add aquire the channel-wide sender as the puzzle channel is in a poisoned state: {e}");
+            return server_error(tera, stream_clone)
+        }
+    };
+
+    match THREADPOOL.execute( move || {
+        loop {            
+            match heartbeat_channel_wide_sender.send(Message::ping_message()){
+                Ok(_) => trace!("Server heart beat"),
+                Err(_) => {
+                    warn!("failed to send heart beat");
+                    break
+                },
+            }
+            sleep(Duration::from_millis(5000))
+        };
+        info!("Finished sending heart beats");
+    }){
+        Ok(_) => info!("Succesfully set up Heartbeats"),
+        Err(error) => {
+            info!("Failed to exceuted puzzle channel creation {0:?}", error);
+            return Err(HandlerError::new(stream_clone, Error::new(ErrorKind::Other, format!("Failed to exceuted puzzle channel creation {0:?}", error))))
+        },
+    };
 
     let stream_writer = Arc::clone(&stream_arc);
     match THREADPOOL.execute( move || {
@@ -1109,22 +1209,25 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
                     break
                 }
             };
+            trace!("{:?}",msg);
+            let frame: Vec<u8> = msg.into();
 
-            match String::from_utf8(msg){
-                Ok(s) => {
-                    let frame = websocket_message(&s);
-                    let res = stream_writer.lock().unwrap_or_else(|e| {
-                        warn!("Acquired a lock on a poisoned stream. Sening message anyway. Error: {e}");
-                        e.into_inner()
-                    }).write_all(&frame);
+            let res = stream_writer.lock().unwrap_or_else(|e| {
+                warn!("Acquired a lock on a poisoned stream. Sening message anyway. Error: {e}");
+                e.into_inner()
+            }).write_all(&frame);
 
-                    if let Err(error) = res {
-                        warn!("There was an error writing to the the stream from this puzzle channel: {error}");
-                        break
+            match res {
+                Ok(_) => trace!("sent message"),
+                Err(error) => {
+                    match error.kind() {
+                        ErrorKind::BrokenPipe => {
+                            info!("Client disconnected");
+                            break
+                        },
+                        _ => error!("There was an error writing to the the stream from this puzzle channel: {error}"),
                     }
-
-                }
-                Err(e) => warn!("cannot turn msg ({:?}) into utf-8 string", e),
+                },
             }
         }
         info!("finished writing data to client");
@@ -1161,12 +1264,13 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
                         // put here!
                         match msg.opcode {
                             OpCode::Continuation => todo!(),
-                            OpCode::Ping => todo!(),
-                            OpCode::Pong => todo!(),
+                            OpCode::Ping => {trace!("Ping"); Ok(())},
+                            OpCode::Pong => {trace!("Pong"); Ok(())},
                             OpCode::Close => {
-                                if let Err(e) = channel_wide_sender.send(msg.body) {
-                                    error!("There was an error broadcasting the message to via the channel wide sender: {e}")
-                                }
+                                info!("Received close message");
+                                // if let Err(e) = channel_wide_sender.send(msg) {
+                                //     error!("There was an error broadcasting the message to via the channel wide sender: {e}")
+                                // }
 
                                 let frame = close_websocket_message();
                                 if let Err(e) = guard.write_all(&frame) {
@@ -1177,12 +1281,12 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
                                 }
                                 break
                             },
-                            OpCode::Reserved => {
-                                warn!("Cannot handle this opcode");
+                            OpCode::Reserved(x) => {
+                                warn!("Cannot handle op code {}", x);
                                 Ok(())
                             },
-                            OpCode::Text => channel_wide_sender.send(msg.body),
-                            OpCode::Binary => channel_wide_sender.send(msg.body),
+                            OpCode::Text => channel_wide_sender.send(msg),
+                            OpCode::Binary => channel_wide_sender.send(msg),
                         }
                     },
                     Err(_err) => {
@@ -1194,6 +1298,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
         }
         // puzzle_channel;
         info!("finished reading websocket from client");
+
 
     }) {
         Ok(_) => info!("Succesfully set up receiver"),
