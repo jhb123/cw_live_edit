@@ -46,6 +46,7 @@
     width: fit-content;
     flex-direction: column;
     max-height: 90vh;
+    top: 10vh;
     box-sizing: border-box;
     right: 0;
     left: 0;
@@ -54,6 +55,7 @@
 
 .clues {
     display: flex;
+    position: relative;
     flex:1;
 }
 
