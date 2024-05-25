@@ -1141,7 +1141,6 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
     let (sender, receiver) = mpsc::channel::<Message>();
 
     let (terminate_sender, terminate_rec) = mpsc::channel();
-    let terminate_rec=Arc::new(Mutex::new(terminate_rec));
 
     let sender = Arc::new(sender);
     let sender_clone = sender.clone();
@@ -1194,7 +1193,7 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
     let stream_writer = Arc::clone(&stream_arc);
     match THREADPOOL.execute( move || {
         loop {
-            if let Ok(should_break) = terminate_rec.lock().unwrap().recv_timeout(Duration::from_millis(10)){
+            if let Ok(should_break) = terminate_rec.recv_timeout(Duration::from_millis(10)){
                 if should_break {
                     trace!("ending here");
                     break
