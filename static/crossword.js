@@ -68,7 +68,7 @@ class CrosswordGrid extends HTMLElement {
     }
 
     async fetchAllData() {
-        fetch(`${this.src}/data`)
+        fetch(`${this.src}/data`, {cache: "no-store"})
             .then(response => {
                 if (!response.ok) {
                     throw new Error("Failed to get crossword data")
