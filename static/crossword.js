@@ -49,10 +49,18 @@ class CrosswordGrid extends HTMLElement {
                 this.fetchAllData().then(() => {
                     this.setUpGridListener()
                 });
-                
-                
-            })
+            });
+        
+            window.addEventListener('online', this.handleOnline.bind(this));
 
+
+    }
+
+    handleOnline(event) {
+        console.log("You're online");
+        this.fetchAllData().then(() => {
+            //this.setUpGridListener()
+        });
     }
 
     async fetchAllData() {
