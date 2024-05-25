@@ -125,3 +125,9 @@
     margin: 2px 2px;
     font-size: x-large;
 }
+
+:popover-open {
+    position: relative;
+    bottom: 50%;
+    right: 50%;
+}

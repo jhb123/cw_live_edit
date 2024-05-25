@@ -7,7 +7,8 @@ class CrosswordGrid extends HTMLElement {
         this.src = this.getAttribute('src') || ''
 
         this.loc = window.location.host + this.src
-        
+
+                
         fetch(`/crossword.html`)
             .then(response => {
                 if (!response.ok) {
@@ -22,7 +23,7 @@ class CrosswordGrid extends HTMLElement {
                 template.innerHTML = template_data;
                 shadowRoot.appendChild(template.content.cloneNode(true));
                 this.grid = shadowRoot.getElementById('crossword')
-                
+
                 this.acrossHintsParent = shadowRoot.getElementById('across-hint-container')
                 this.acrossHints = shadowRoot.getElementById('across-hints')
 
@@ -31,6 +32,10 @@ class CrosswordGrid extends HTMLElement {
 
                 this.clues_div = shadowRoot.getElementById('clues')
                 this.keyboard = shadowRoot.getElementById('keyboard')
+
+                this.closeBtn = shadowRoot.getElementById('close-btn')
+                this.wsStatus = shadowRoot.getElementById("ws-status");
+
                 this.createKeyBoard()
 
                 // this.data = null;
@@ -49,7 +54,6 @@ class CrosswordGrid extends HTMLElement {
     }
 
     async fetchCellData() {
-        console.log("fetching data")
         fetch(`${this.src}/data`)
             .then(response => {
                 if (!response.ok) {
@@ -64,7 +68,6 @@ class CrosswordGrid extends HTMLElement {
     }
 
     async fetchAllData() {
-        console.log("fetching data")
         fetch(`${this.src}/data`)
             .then(response => {
                 if (!response.ok) {
@@ -144,7 +147,6 @@ class CrosswordGrid extends HTMLElement {
         this.acrossHints.replaceChildren()
         this.downHints.replaceChildren()
 
-        console.log("drawing fresh grid")
         for (let incomingClueName in this.data.across) {
             let incomingClueData = this.data.across[incomingClueName];
             this.handleIncomingClue(incomingClueName, this.acrossHintsData, incomingClueData);
@@ -230,7 +232,6 @@ class CrosswordGrid extends HTMLElement {
 
     createKeyBoard = () => {
         navigator.userAgent
-        console.log(navigator.userAgent)
         
         if (navigator.userAgent.includes("Mobile")) {
             this.clues_div.style.maxHeight = "calc(100% - 500px)"
@@ -268,19 +269,40 @@ class CrosswordGrid extends HTMLElement {
     }
 
     connect() {
-        this.ws = new WebSocket("ws://" + this.loc + '/live')
+        // try {
+        const protocol = window.location.protocol
+        if( protocol === "http:"){
+            this.ws = new WebSocket("ws://" + this.loc + '/live')
+
+        } else {
+            this.ws = new WebSocket("wss://" + this.loc + '/live')
+        }
+
+
         this.ws.addEventListener("message", (event) => {
             let message = JSON.parse(event.data);
             this.handleUpdateTextFromServer(message)
         });
 
         this.ws.addEventListener("close", (event) => {
-            console.log("Closed")
             this.ws = null
+            this.wsStatus.showModal()
             this.reconnect()
         });
 
-        // this.checkWebSocketState(this.grid);
+        this.ws.addEventListener("open", (event) => {
+            this.wsStatus.close()
+            this.checkWebSocketState(this.grid);
+        });
+
+        try{
+            this.closeBtn.addEventListener("click", () =>{
+                this.ws.close()
+            })
+        } catch(error) {
+            console.info("debugging elements not found")
+        }
+
     }
 
     reconnect() {
@@ -292,6 +314,7 @@ class CrosswordGrid extends HTMLElement {
     checkWebSocketState = (indicator) => {
         
         const ws = this.ws
+        const modal = this.wsStatus
         function updateStatusIndicator(indicator) {
             // console.log(ws.readyState)
             if (ws.readyState === WebSocket.OPEN) {
@@ -299,6 +322,7 @@ class CrosswordGrid extends HTMLElement {
                 return true
             } else {
                 indicator.style.backgroundColor = 'red';
+                modal.showModal()
                 return false
             }
         }

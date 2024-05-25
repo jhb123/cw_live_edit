@@ -15,7 +15,13 @@ use tera::Tera;
 
 lazy_static! {
     static ref PUZZLEPOOL: Mutex<PuzzlePool> = Mutex::new(PuzzlePool::new());
-    static ref THREADPOOL: ThreadPool = ThreadPool::new(32);
+    static ref THREADPOOL: ThreadPool = {
+        let num_threads = env::var("PUZZLE_THREADS")
+            .unwrap_or_else(|_| "32".to_string())
+            .parse::<usize>()
+            .expect("CW_THREADS must be a valid number");
+            ThreadPool::new(num_threads)
+    };
 }
 
 struct HandlerError {

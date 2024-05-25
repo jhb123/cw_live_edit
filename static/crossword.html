@@ -1,5 +1,5 @@
-<div style="position: absolute; grid-column: 1 / 4; grid-row: 1">
-    <div style="display: flex;">
+<div style="position: absolute; grid-column: 1 / 4; grid-row: 1" id="puzzle-page">
+    <div style="position:relative; display: flex;">
         <div class="flex-container-big">
             <div id="crossword" class="crossword">
             </div>
@@ -19,6 +19,14 @@
             </div>
             <div id="keyboard"></div>
         </div>
+        <dialog id="ws-status">
+            You are not connected to the server
+        </dialog>
     </div>
+    <!-- <div>
+        <button id="close-btn">Close ws</button>
+        <button id="open-btn">Open ws</button>
+    </div> -->
+
     <style> @import "/crossword.css"; </style>
 </div>
