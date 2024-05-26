@@ -19,6 +19,27 @@ services:
         delay: 5s
         max_attempts: 3
         window: 120s
+  
+  stage_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PUZZLE_PATH: /puzzles
+      PUZZLE_PORT: 5052
+      PUZZLE_THREADS: 64
+      RUST_LOG: warn
+    volumes:
+      - stage_puzzle_data:/puzzles
+    ports:
+      - "5052:5052"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
 volumes:
   puzzle_data:
+  stage_puzzle_data:
