@@ -907,7 +907,7 @@ impl PuzzlePool {
                     },
                     Err(e) => {
                         warn!("Cannot find puzzle: {e}");
-                        return server_error(self.tera.clone(), stream);        
+                        return not_found(self.tera.clone(), stream, Some(&format!("Can't find puzzle {puzzle_num}")));        
                     }
                 }
             }
