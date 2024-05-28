@@ -663,7 +663,7 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
         Some(caps) => caps,
         None => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("api route doesn't match the regex used by the route handler"))))
     };
-    let puzzle_num = caps["num"].to_string();
+    let puzzle_num = caps["num"].parse::<i64>().unwrap();
 
     let mut context = tera::Context::new();
     context.insert("src", &format!("/puzzle/{puzzle_num}"));
@@ -707,7 +707,7 @@ fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) -
         None => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("api route doesn't match the regex used by the route handler"))))
     };
 
-    let puzzle_num = caps["num"].to_string();
+    let puzzle_num = caps["num"].parse().unwrap();
 
     match PUZZLEPOOL.lock(){
         Ok(mut mut_guard) => return mut_guard.get_grid_data(puzzle_num , stream),
@@ -727,7 +727,7 @@ fn puzzle_handler_live(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream
         Some(caps) => caps,
         None => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("api route doesn't match the regex used by the route handler"))))
     };
-    let puzzle_num = caps["num"].to_string();
+    let puzzle_num = caps["num"].parse().unwrap();
 
     let handshake = match websocket_handshake(req){
         Ok(handshake) => handshake,
@@ -785,15 +785,18 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
                 },
             };
 
+            let id = match create_new_puzzle(&request_data.name, &request_data.crossword) {
+                Ok(id) => id,
+                Err(error) => return Err(HandlerError::new(stream, error))
+            };
 
-            if let Err(error) = create_new_puzzle(&request_data.name, &request_data.crossword) {
-                return Err(HandlerError::new(stream, error))
-            }
 
-            let contents = match serde_json::to_string(&request_data.crossword){
+            let puzzle_info = get_puzzle_db(&id).unwrap();
+
+            let contents = match serde_json::to_string(&puzzle_info){
                 Ok(s) => s,
                 Err(e) => {
-                    return bad_request(tera, stream, &format!("The crossword did not match the schema expected by the database {e}"))
+                    return server_error(tera, stream)
                 },
             };
 
@@ -814,7 +817,7 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
 
 #[derive(Debug)]
 struct PuzzlePool {
-    pool: HashMap<String, Arc<Mutex<PuzzleChannel>>>,
+    pool: HashMap<i64, Arc<Mutex<PuzzleChannel>>>,
     tera: Arc<Tera>
 }
 
@@ -830,7 +833,7 @@ impl PuzzlePool {
         Self { pool, tera: Arc::new(tera) }
     }
 
-    fn connect_client(&mut self, puzzle_num: String, stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    fn connect_client(&mut self, puzzle_num: i64, stream: TcpStream) -> Result<TcpStream, HandlerError> {
 
 
         match self.pool.get(&puzzle_num) {
@@ -860,7 +863,7 @@ impl PuzzlePool {
         }
     }
 
-    fn get_grid_data(&mut self, puzzle_num: String, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    fn get_grid_data(&mut self, puzzle_num: i64, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
         self.pool.iter().for_each(|(name,_)|{
             info!("channel {}",name)
         });
@@ -914,7 +917,7 @@ impl PuzzlePool {
         }
     }
 
-    fn remove_channel(&mut self, puzzle_num: &str) {
+    fn remove_channel(&mut self, puzzle_num: &i64) {
         self.pool.remove(puzzle_num);
     }
 }
@@ -927,13 +930,13 @@ struct PuzzleChannel {
     clients: ThreadSafeSenderVector,
     terminate_sender: mpsc::Sender<bool>,
     crossword: Arc<Mutex<Crossword>>,
-    puzzle_num: String,
+    puzzle_num: i64,
     tera: Arc<Tera>
 }
 
 impl PuzzleChannel {
-    fn new(puzzle_num: String) -> Result<Option<Self>, Error> {
-        let puzzle_num_clone = puzzle_num.clone();
+    fn new(puzzle_num: i64) -> Result<Option<Self>, Error> {
+        // let puzzle_num_clone = puzzle_num.clone();
 
         let (sender, receiver) = mpsc::channel::<Message>();
 
@@ -976,7 +979,7 @@ impl PuzzleChannel {
                 
                 match msg_clone.opcode {
                     OpCode::Continuation => todo!(),
-                    OpCode::Text => send_msg_to_clients(&msg, &crossword_clone, &puzzle_num),
+                    OpCode::Text => send_msg_to_clients(&msg, &crossword_clone, puzzle_num),
                     OpCode::Binary => todo!(),
                     OpCode::Reserved(_) => todo!(),
                     OpCode::Close => trace!("Close"),
@@ -1020,7 +1023,7 @@ impl PuzzleChannel {
             clients,
             terminate_sender,
             crossword,
-            puzzle_num: puzzle_num_clone,
+            puzzle_num,
             tera: Arc::new(tera)
         }))
     }
@@ -1082,7 +1085,7 @@ impl PuzzleChannel {
 
 }
 
-fn send_msg_to_clients(msg: &Message, crossword_clone: &Arc<Mutex<Crossword>>, puzzle_num: &String) {
+fn send_msg_to_clients(msg: &Message, crossword_clone: &Arc<Mutex<Crossword>>, puzzle_num: i64) {
     match String::from_utf8(msg.clone().body) {
         Ok(client_data) => {
             info!("decoded incoming data: {}", client_data);
