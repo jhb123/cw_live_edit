@@ -64,6 +64,7 @@ fn main() {
     routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
 
     routes.insert(r"^/puzzle/add", puzzle_add_handler);
+    routes.insert(r"^/puzzle/list$", puzzle_list_handler);
 
     // routes.insert(r"^/login", login_handler);
     routes.insert(r"^/sign-up", sign_up_handler);
@@ -597,12 +598,6 @@ fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
 }
 
 fn client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
-    // acquire the html of the page.
-    // let status_line = match req {
-    //     HttpRequest::Get { status_line, .. } => status_line,
-    //     HttpRequest::Post { status_line, .. } => status_line,
-    // };
-
 
     let mut context = tera::Context::new();
     context.insert("name", "Test clients");
@@ -812,6 +807,32 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
 
         },
     };
+
+}
+
+fn puzzle_list_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    let puzzle_data = match get_all_puzzle_db(){
+        Ok(puzzle_data) => puzzle_data,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let contents = match serde_json::to_string(&puzzle_data){
+        Ok(s) => s,
+        Err(error) => {
+            error!("Unsuccessfully serialised puzzle data, {}", error);
+            return server_error(tera, stream)
+        },
+    };
+
+    let response = ResponseBuilder::new()
+        .set_json_content(contents)
+        .set_status_code(StatusCode::Ok)
+        .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => return Ok(stream),
+        Err(error) => return Err(HandlerError::new(stream, error))
+    }
 
 }
 
