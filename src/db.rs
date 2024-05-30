@@ -50,7 +50,7 @@ fn get_next_id()-> Result<i64, rusqlite::Error> {
 
    
     let mut stmt = conn.prepare(
-        "SELECT MAX(id) FROM puzzles LIMIT 1"
+        "SELECT COALESCE(MAX(id),0) FROM puzzles LIMIT 1"
     )?;
     let res: Result<i64, rusqlite::Error> = stmt.query_row([], |row| {
         let id: i64 = row.get(0)?;
@@ -280,7 +280,10 @@ pub fn create_new_puzzle(name: &str, cw: &Crossword) -> Result<(), Error> {
 
     let puzzle_dir = Path::new(&*PUZZLE_DIR_PATH);
 
-    let id = get_next_id().unwrap();
+    let id: i64 = match get_next_id() {
+        Ok(x) => x,
+        Err(e) => return Err(Error::new(ErrorKind::Other, format!("Database error: {}", e))),
+    };
 
     let puzzle_path = puzzle_dir.join(format!("{id}.json") );
     
