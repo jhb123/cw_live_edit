@@ -202,7 +202,7 @@ pub fn get_all_puzzle_db() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
    rows
 }
 
-pub fn get_puzzle_db(id: &str) -> Result<PuzzleDbData, rusqlite::Error> {
+pub fn get_puzzle_db(id: &i64) -> Result<PuzzleDbData, rusqlite::Error> {
     info!("Looking for puzzle id {id}");
 
     let conn = Connection::open(&*PUZZLE_DB_PATH)?;
@@ -221,7 +221,7 @@ pub fn get_puzzle_db(id: &str) -> Result<PuzzleDbData, rusqlite::Error> {
 }
 
 
-pub fn get_puzzle(id: &str) -> Result<Option<Crossword>, Error> {
+pub fn get_puzzle(id: &i64) -> Result<Option<Crossword>, Error> {
 
     match get_puzzle_db(id) {
         Ok(data) => {
@@ -244,7 +244,7 @@ pub fn get_puzzle(id: &str) -> Result<Option<Crossword>, Error> {
 }
 
 
-pub fn save_puzzle(id: &str, cw: &Crossword) -> Result<(), Error> {
+pub fn save_puzzle(id: &i64, cw: &Crossword) -> Result<(), Error> {
 
     match get_puzzle_db(id) {
         Ok(data) => {
@@ -274,7 +274,7 @@ pub fn save_puzzle(id: &str, cw: &Crossword) -> Result<(), Error> {
 
 }
 
-pub fn create_new_puzzle(name: &str, cw: &Crossword) -> Result<(), Error> {
+pub fn create_new_puzzle(name: &str, cw: &Crossword) -> Result<i64, Error> {
 
     let data = serde_json::to_string(cw)?;
 
@@ -310,5 +310,5 @@ pub fn create_new_puzzle(name: &str, cw: &Crossword) -> Result<(), Error> {
     info!("writing crossword to {:?}", file);
     File::write_all(&mut file, data.as_bytes())?;
 
-    Ok(())
+    Ok(id)
 }
