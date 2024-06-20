@@ -786,7 +786,13 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
             };
 
 
-            let puzzle_info = get_puzzle_db(&id).unwrap();
+            let puzzle_info = match get_puzzle_db(&id) {
+                Ok(data) => data,
+                Err(error) => {
+                    let error = Error::new(ErrorKind::Other, format!("Database error: {}", error));
+                    return Err(HandlerError::new(stream, error))
+                }
+            };
 
             let contents = match serde_json::to_string(&puzzle_info){
                 Ok(s) => s,
