@@ -324,6 +324,26 @@ fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<
     }
 }
 
+fn not_authorised(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    let mut context = tera::Context::new();
+    context.insert("status", "401");
+    context.insert("message", "Not authorised" );
+    let contents = match tera.render("error.html", &context){
+        Ok(contents) => contents,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Unauthorized)
+        .set_html_content(contents)
+        .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
+}
+
 fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
     static_file_handler(stream, "static/crossword.js","text/javascript")
 }
@@ -711,12 +731,17 @@ fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) -
     }
 }
 
-fn puzzle_soft_delete_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError>  {
+fn puzzle_soft_delete_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError>  {
 
-    let status_line = match req {
-        HttpRequest::Get { status_line, .. } => status_line,
-        HttpRequest::Post { status_line, .. } => status_line,
+    let (status_line, headers) = match req {
+        HttpRequest::Get { status_line, headers, .. } => (status_line, headers),
+        HttpRequest::Post { status_line, headers, .. } => (status_line, headers),
     };
+
+    if let Err(_) =  is_authorised(headers) {
+        return not_authorised(tera, stream)
+    };
+
 
     let path_info = Regex::new(r"(?<num>\d+)/delete").expect("Invalid regular expression");
     let caps = match path_info.captures(&status_line.route) {
@@ -796,7 +821,11 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
 
     let _status_line = match req {
         HttpRequest::Get {  .. } => return bad_request(tera, stream, "Unsupported http method"),
-        HttpRequest::Post { status_line: _, headers: _, body} => {
+        HttpRequest::Post { status_line: _, headers , body} => {
+
+            if let Err(_) =  is_authorised(headers) {
+                return not_authorised(tera, stream)
+            };
 
             let body = match std::str::from_utf8(&body) {
                 Ok(s) => s,
