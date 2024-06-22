@@ -2,12 +2,27 @@
 name = "cw_grid_server"
 version = "0.1.0"
 edition = "2021"
+default-run = "cw_grid_server"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "cw_grid_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cw_grid_server"
+path = "src/main.rs"
+
+[[bin]]
+name = "prune"
+path = "src/prune.rs"
+
 [dependencies]
+anyhow = "1.0.86"
 base64 = "0.21.7"
 chrono = "0.4.31"
+clap = { version = "4.5.7", features = ["derive"] }
 env_logger = "0.11.1"
 lazy_static = "1.4.0"
 log = "0.4.20"
