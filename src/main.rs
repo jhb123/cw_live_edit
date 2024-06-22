@@ -1,5 +1,5 @@
 use cw_grid_server::{
-    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, validate_password}, get_form_data, get_login_cookies, is_authorised, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, Message, OpCode}, HttpRequest, ThreadPool
+    crossword::{Cell, Crossword}, db::{add_user, create_new_puzzle, create_puzzle_dir, get_all_puzzle_db, get_puzzle, get_puzzle_db, get_user_password, init_db, save_puzzle, set_session, soft_delete_puzzle, validate_password}, get_form_data, get_login_cookies, is_authorised, response::{internal_error_response, ResponseBuilder, StatusCode}, websockets::{close_websocket_message, decode_client_frame, websocket_handshake, Message, OpCode}, HttpRequest, ThreadPool
 };
 use lazy_static::lazy_static;
 use log::{error, info, trace, warn};
@@ -62,6 +62,7 @@ fn main() {
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
     routes.insert(r"^/puzzle/\d+/data$", puzzle_handler_data);
     routes.insert(r"^/puzzle/\d+/live$", puzzle_handler_live);
+    routes.insert(r"^/puzzle/\d+/delete$", puzzle_soft_delete_handler);
 
     routes.insert(r"^/puzzle/add", puzzle_add_handler);
     routes.insert(r"^/puzzle/list$", puzzle_list_handler);
@@ -710,6 +711,37 @@ fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) -
     }
 }
 
+fn puzzle_soft_delete_handler(req: &HttpRequest, _tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError>  {
+
+    let status_line = match req {
+        HttpRequest::Get { status_line, .. } => status_line,
+        HttpRequest::Post { status_line, .. } => status_line,
+    };
+
+    let path_info = Regex::new(r"(?<num>\d+)/delete").expect("Invalid regular expression");
+    let caps = match path_info.captures(&status_line.route) {
+        Some(caps) => caps,
+        None => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("api route doesn't match the regex used by the route handler"))))
+    };
+
+    let puzzle_num = caps["num"].parse().unwrap();
+
+    if let Err(error) = soft_delete_puzzle(puzzle_num){
+        return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_text_content(format!("Soft deleted {}", puzzle_num))
+        .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
+    
+}
+
 fn puzzle_handler_live(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
 
     let status_line = match req {
@@ -796,7 +828,7 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
 
             let contents = match serde_json::to_string(&puzzle_info){
                 Ok(s) => s,
-                Err(e) => {
+                Err(_) => {
                     return server_error(tera, stream)
                 },
             };

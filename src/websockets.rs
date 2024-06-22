@@ -61,7 +61,7 @@ impl TryFrom<u8> for OpCode {
 
     
 }
-
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Message {
     pub opcode: OpCode,
@@ -132,7 +132,7 @@ impl Into<Vec<u8>> for Message {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct MessageDecodeError{
-    msg: &'static str
+    msg: String
 }
 
 
@@ -146,13 +146,13 @@ impl TryFrom<Vec<u8>> for Message {
         let opcode = match OpCode::try_from(opcode_u8){
             Ok(x) => x,
             Err(code) => {
-                        return Err(MessageDecodeError{msg: "client send unexpected opcode"})
+                    return Err(MessageDecodeError{msg: format!("client send unexpected opcode {}",code.val) })
                 }
         };
 
         let mut payload_len = (frame_header[1] & 0b0111_1111) as u64;
-        let mut masking_key: &[u8];
-        let mut rec_msg: &[u8];
+        let masking_key: &[u8];
+        let rec_msg: &[u8];
 
         match payload_len {
             0..=125 => {
@@ -184,9 +184,7 @@ impl TryFrom<Vec<u8>> for Message {
         trace!("full payload len: {}", payload_len);
         trace!("masking key: {:02X?}", masking_key);
 
-
-
-        let mut rec_msg = vec![0; payload_len as usize];
+        let rec_msg = vec![0; payload_len as usize];
 
         let decoded: Vec<u8> = rec_msg
             .iter()

@@ -15,6 +15,65 @@ lazy_static! {
     };
 }
 
+#[derive(Debug,Serialize)]
+pub struct PuzzleDbData {
+    id: usize,
+    pub name: String,
+    file: String,
+    deleted: usize
+}
+
+impl PuzzleDbData {
+
+    fn from_row(row: &rusqlite::Row<'_>) ->Result<PuzzleDbData, rusqlite::Error> {
+        let id = match row.get(0){
+            Ok(val) => val,
+            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
+                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'ID' at Column index {0}, but {0} is an invalid Column Index", idx);
+                return Err(rusqlite::Error::InvalidColumnIndex(idx))
+            },
+            Err(err) => {
+                error!("{0}",err);
+                return Err(err)
+            }
+        };
+        let name = match row.get(1){
+            Ok(val) => val,
+            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
+                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'name' at Column index {0}, but {0} is an invalid Column Index", idx);
+                return Err(rusqlite::Error::InvalidColumnIndex(idx))
+            },
+            Err(err) => {
+                error!("{0}",err);
+                return Err(err)
+            }
+        };
+        let file = match row.get(2){
+            Ok(val) => val,
+            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
+                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'file' at Column index {0}, but {0} is an invalid Column Index", idx);
+                return Err(rusqlite::Error::InvalidColumnIndex(idx))
+            },
+            Err(err) => {
+                error!("{0}",err);
+                return Err(err)
+            }
+        };
+        let deleted = match row.get(3){
+            Ok(val) => val,
+            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
+                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'deleted' at Column index {0}, but {0} is an invalid Column Index", idx);
+                return Err(rusqlite::Error::InvalidColumnIndex(idx))
+            },
+            Err(err) => {
+                error!("{0}",err);
+                return Err(err)
+            }
+        };
+        Ok(PuzzleDbData {id, name, file, deleted})
+    }
+}
+
 pub fn create_puzzle_dir() -> Result<(),Error> {
     fs::create_dir_all(&*PUZZLE_DIR_PATH)?;
     Ok(())
@@ -22,9 +81,23 @@ pub fn create_puzzle_dir() -> Result<(),Error> {
 
 pub fn init_db() -> Result<(), rusqlite::Error> {
 
-    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+    let mut conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     info!("initialising database");
+    init_db_v0(&mut conn)?;
+    if let Err(e) = init_db_v1(&mut conn) {
+        match e {
+            rusqlite::Error::SqliteFailure(_, Some(ref msg)) if msg.contains("duplicate column name") => {
+                println!("Error: Duplicate column name detected: {}", msg);
+                info!("Already applied v1 transformation to db");
+            }
+            _ => return Err(e)
+        }
+    }
+    Ok(())
+}
+
+fn init_db_v0(conn: &mut Connection) -> Result<(), rusqlite::Error> {
     conn.execute(
         "create table if not exists puzzles (
              id integer primary key,
@@ -32,7 +105,6 @@ pub fn init_db() -> Result<(), rusqlite::Error> {
              file text not null unique
          )",()
     )?;
-
     conn.execute(
         "create table if not exists users (
              id integer primary key,
@@ -41,8 +113,17 @@ pub fn init_db() -> Result<(), rusqlite::Error> {
              session integer
          )",()
     )?;
-
     Ok(())
+}
+
+fn init_db_v1(conn: &mut Connection) -> Result<(), rusqlite::Error> {
+
+    let tx = conn.transaction()?;
+    tx.execute("ALTER TABLE puzzles
+    ADD deleted INTEGER DEFAULT 0 NOT NULL", [])?;
+    info!("Commiting db v1 transaction");
+    tx.commit()
+
 }
 
 fn get_next_id()-> Result<i64, rusqlite::Error> {
@@ -68,6 +149,18 @@ pub fn add_puzzle_to_db(name: &str, file: &str) -> Result<(), rusqlite::Error> {
         "insert into puzzles (name, file) values (:name, :file)"
     )?;
     stmt.execute(named_params! { ":name": name, ":file": file})?;
+
+    Ok(())
+}
+
+pub fn soft_delete_puzzle(puzzle_id: i64) -> Result<(), rusqlite::Error> {
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+
+    let mut stmt = conn.prepare(
+        "update puzzles set deleted=1 where id=(:id)"
+    )?;
+
+    stmt.execute(named_params! { ":id": puzzle_id})?;
 
     Ok(())
 }
@@ -140,61 +233,14 @@ pub fn validate_password(plain: &str, hashed: &str) -> Result<(), () > {
 }
 
 
-#[derive(Debug,Serialize)]
-pub struct PuzzleDbData {
-    id: usize,
-    pub name: String,
-    file: String
-}
-
-impl PuzzleDbData {
-
-    fn from_row(row: &rusqlite::Row<'_>) ->Result<PuzzleDbData, rusqlite::Error> {
-        let id = match row.get(0){
-            Ok(val) => val,
-            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
-                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'ID' at Column index {0}, but {0} is an invalid Column Index", idx);
-                return Err(rusqlite::Error::InvalidColumnIndex(idx))
-            },
-            Err(err) => {
-                error!("{0}",err);
-                return Err(err)
-            }
-        };
-        let name = match row.get(1){
-            Ok(val) => val,
-            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
-                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'name' at Column index {0}, but {0} is an invalid Column Index", idx);
-                return Err(rusqlite::Error::InvalidColumnIndex(idx))
-            },
-            Err(err) => {
-                error!("{0}",err);
-                return Err(err)
-            }
-        };
-        let file = match row.get(2){
-            Ok(val) => val,
-            Err(rusqlite::Error::InvalidColumnIndex(idx)) => {
-                error!("While trying to parse a row from the database into a PuzzleDbData struct, we attempted to find 'file' at Column index {0}, but {0} is an invalid Column Index", idx);
-                return Err(rusqlite::Error::InvalidColumnIndex(idx))
-            },
-            Err(err) => {
-                error!("{0}",err);
-                return Err(err)
-            }
-        };
-        Ok(PuzzleDbData {id, name, file})
-    }
-}
-
 pub fn get_all_puzzle_db() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
     let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     let mut stmt = conn.prepare(
-        "select id, name, file from puzzles"
+        "select id, name, file, deleted from puzzles where deleted=0"
     )?;
     
-    let rows = stmt.query_map([], |row| {
+    let rows: Result<Vec<PuzzleDbData>, rusqlite::Error> = stmt.query_map([], |row| {
         PuzzleDbData::from_row(row)
     })?
     .collect();
@@ -208,7 +254,7 @@ pub fn get_puzzle_db(id: &i64) -> Result<PuzzleDbData, rusqlite::Error> {
     let conn = Connection::open(&*PUZZLE_DB_PATH)?;
 
     let mut stmt = conn.prepare(
-        "select id, name, file from puzzles where id=:id"
+        "select id, name, file, deleted from puzzles where id=:id"
     )?;
     
     let rows = stmt.query_row(&[(":id", id)], |row| {
@@ -220,6 +266,53 @@ pub fn get_puzzle_db(id: &i64) -> Result<PuzzleDbData, rusqlite::Error> {
     
 }
 
+pub fn get_soft_delete_puzzles() -> Result<Vec<PuzzleDbData>, rusqlite::Error> {
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+
+    let mut stmt = conn.prepare(
+        "select id, name, file, deleted from puzzles where deleted != 0"
+    )?;
+    
+    let rows: Result<Vec<PuzzleDbData>, rusqlite::Error> = stmt.query_map([], |row| {
+        PuzzleDbData::from_row(row)
+    })?
+    .collect();
+    info!("{:?}",rows);
+    rows
+}
+
+pub fn restore_puzzle(id: &i64) -> Result<(), rusqlite::Error> {
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+    conn.execute("update puzzles set deleted=0 where id=(:id)",&[(":id", id)])?;
+    Ok(())
+}
+
+pub fn batch_restore() -> Result<(), rusqlite::Error> {
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+    conn.execute("update puzzles set deleted=0 where deleted=1",[])?;
+    Ok(())
+}
+
+pub fn batch_delete() -> anyhow::Result<()> {
+    let puzzles = get_soft_delete_puzzles()?;
+    puzzles.iter().try_for_each(|data| {
+        fs::remove_file(&data.file)
+    })?;
+
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+    conn.execute("DELETE FROM puzzles WHERE deleted=1",[])?;
+
+    Ok(())
+}
+
+pub fn delete_puzzle(id: &i64) -> anyhow::Result<()> {
+    let data = get_puzzle_db(id)?;
+    fs::remove_file(&data.file)?;
+    let conn = Connection::open(&*PUZZLE_DB_PATH)?;
+    conn.execute("DELETE FROM puzzles WHERE id=:id",&[(":id", id)])?;
+    Ok(())
+
+}
 
 pub fn get_puzzle(id: &i64) -> Result<Option<Crossword>, Error> {
 
@@ -249,7 +342,6 @@ pub fn save_puzzle(id: &i64, cw: &Crossword) -> Result<(), Error> {
     match get_puzzle_db(id) {
         Ok(data) => {
             let puzzle_path = format!("{}",data.file);
-            let mut file = File::open(&puzzle_path)?;
                 
             let mut file = File::options().write(true).open(&puzzle_path).unwrap_or_else(|_| {
                 match File::create(&puzzle_path) {
