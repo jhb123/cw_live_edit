@@ -187,6 +187,11 @@ impl ResponseBuilder  {
         ResponseBuilder{status_code: None, unique_headers: HashMap::new(), headers: Vec::new(), content: "".to_string() }
     }
 
+    pub fn addHeaders(&mut self, headers: &HashMap<String, String>) ->&mut Self {
+        self.headers.extend(headers.iter().map(|k| {(k.0.clone(),k.1.clone())} ));
+        self
+    }
+
     pub fn set_status_code(&mut self, status_code: StatusCode) ->&mut Self {
         self.status_code = Some(status_code);
         self

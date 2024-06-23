@@ -523,7 +523,7 @@ fn log_out_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -
 fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
 
     match req {
-        HttpRequest::Get { status_line: _, headers:_  } => {
+        HttpRequest::Get { status_line: _, headers:headers  } => {
             let context = tera::Context::new();
             let contents = match tera.render("login.html", &context){
                 Ok(contents) => contents,

@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+
+    h1 {
+      @apply text-5xl my-2 font-serif;
+    }
+    h2 {
+      @apply text-4xl my-2 font-serif;
+    }
+    h3 {
+      @apply text-3xl my-2 font-serif; 
+    }
+    h4 {
+      @apply text-2xl my-2 font-serif;
+    }
+    h5 {
+      @apply text-xl my-2 font-serif;
+    }
+    h6 {
+      @apply text-lg leading-9 my-2 font-serif;
+    }
+    p {
+      @apply leading-9 my-2;
+    }
+  
+    blockquote {
+      @apply italic my-4 pl-4;
+    }
+  
+    li {
+      @apply leading-9;
+    }
+  
+    .document {
+      @apply font-light
+    }
+  
+    .document h1 {
+      @apply text-5xl font-serif my-2;
+    }
+  
+    .document h2 {
+      @apply text-4xl font-serif my-2;
+    }
+    .document h3 {
+      @apply text-3xl font-serif my-2; 
+    }
+    .document h4 {
+      @apply text-2xl font-serif my-2;
+    }
+    .document h5 {
+      @apply text-xl font-serif my-2;
+    }
+  
+    .document a {
+      @apply underline underline-offset-4
+    }
+  
+    .document img {
+      @apply inline-block
+    }
+  
+    .document p {
+      @apply text-justify dark:text-slate-300 my-10;
+    }
+  
+    .document ul {
+      @apply list-disc ml-8 dark:text-slate-200
+    }
+  
+    .document ol {
+      @apply list-decimal ml-8 dark:text-slate-200
+    }
+    
+    pre  {
+      text-wrap: wrap;
+      @apply bg-slate-200 border-2 block p-3 rounded-lg dark:bg-slate-700 dark:text-slate-200 text-xs	sm:text-base
+    }
+  
+  }
+  
+  
+  
+  @layer components {
+    .primary-button {
+      @apply bg-white dark:bg-emerald-700 hover:bg-slate-100 text-slate-900 dark:text-emerald-200 hover:dark:bg-emerald-600 dark:hover:text-emerald-100 py-1 px-3 border border-gray-400 rounded shadow
+    }
+    
+    /* .secondary-button {
+      @apply custom-button bg-slate-200 dark:bg-slate-600 hover:bg-slate-100  dark:text-emerald-200 dark:hover:bg-slate-500 dark:hover:text-emerald-100
+    } */
+    
+    .custom-input {
+      @apply border border-slate-200 rounded-lg p-2 hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800
+    }
+    /* ... */
+  }

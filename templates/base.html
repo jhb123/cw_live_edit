@@ -4,19 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Example{% endblock %}</title>
-    <script src="https://unpkg.com/htmx.org@1.9.9"></script> 
+    <script src="https://unpkg.com/htmx.org@1.9.9"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/response-targets.js"></script>
+
     <link rel="stylesheet" type="text/css" href="/styles.css">
 </head>
-<body>
-  <nav>
-    <h1>{% block page_name %}Crossword{% endblock %}</h1>
-    <div>
-      <h5>Navigation</h5>
-      <ul>
-        <li><a href="/">Home</a></li>
-      </ul>
-    </div>
+<body hx-boost class="bg-slate-50 dark:bg-slate-900 w-screen text-slate-900 dark:text-emerald-200">
+  <header class="p-3 bg-gradient-to-b from-slate-200 via-slate-100 to-slate-200 h-26 w-screen
+dark:bg-gradient-to-b dark:from-slate-800 dark:via-slate-700 dark:to-slate-800">
+<div class="flex justify-between content-around">
+  <nav class="flex gap-4 place-content-center place-items-center content-center h-10">
+    <p class="text-3xl font-serif text-emerald-700 dark:text-emerald-200">{% block page_name %}Crossword{% endblock %}</p>
+    <a hx-boost="true" class="ml-8 font-serif underline" href="/">home</a>
+    <a hx-boost="true" class="font-serif underline" href="/">about</a>
   </nav>
+</div>
+
+  </header>
     <main id="page-content">
       {% block content %}{% endblock %}
     </main>
