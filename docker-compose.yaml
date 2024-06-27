@@ -28,7 +28,7 @@ services:
       PUZZLE_PATH: /puzzles
       PUZZLE_PORT: 5052
       PUZZLE_THREADS: 64
-      RUST_LOG: warn
+      RUST_LOG: info 
     volumes:
       - stage_puzzle_data:/puzzles
     ports:
