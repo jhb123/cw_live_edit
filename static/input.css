@@ -3,7 +3,12 @@
 @tailwind utilities;
 
 @layer base {
-
+    a {
+      @apply underline
+    }
+    li {
+      @apply ml-8 list-disc	
+    }
     h1 {
       @apply text-5xl my-2 font-serif;
     }
@@ -33,45 +38,42 @@
     li {
       @apply leading-9;
     }
+
   
-    .document {
+    .about {
       @apply font-light
     }
   
-    .document h1 {
+    .about h1 {
       @apply text-5xl font-serif my-2;
     }
   
-    .document h2 {
+    .about h2 {
       @apply text-4xl font-serif my-2;
     }
-    .document h3 {
+    .about h3 {
       @apply text-3xl font-serif my-2; 
     }
-    .document h4 {
+    .about h4 {
       @apply text-2xl font-serif my-2;
     }
-    .document h5 {
+    .about h5 {
       @apply text-xl font-serif my-2;
     }
   
-    .document a {
+    .about a {
       @apply underline underline-offset-4
     }
   
-    .document img {
-      @apply inline-block
-    }
-  
-    .document p {
+    .about p {
       @apply text-justify dark:text-slate-300 my-10;
     }
   
-    .document ul {
+    .about ul {
       @apply list-disc ml-8 dark:text-slate-200
     }
   
-    .document ol {
+    .about ol {
       @apply list-decimal ml-8 dark:text-slate-200
     }
     
