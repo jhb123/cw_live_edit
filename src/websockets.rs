@@ -88,12 +88,12 @@ impl Message {
         match len {
             0..=125 => raw_data.push(len.try_into().unwrap()),
             126..=65535 => {
-                let len = (len as u16).to_le_bytes();
+                let len = (len as u16).to_be_bytes();
                 raw_data.push(126);
                 raw_data.extend(len.iter());
             }
             65536..= 4294967295=> {
-                let len = (len as u32).to_le_bytes();
+                let len = (len as u32).to_be_bytes();
                 raw_data.push(127);
                 raw_data.extend(len.iter());
             }
@@ -103,7 +103,7 @@ impl Message {
             4294967296_usize.. => todo!()
         }
         raw_data.extend(body.iter());
-        
+
         Self { opcode, body, masking_key: [0; 4], fin_bit, len, raw_data  }
     }
 
@@ -182,7 +182,6 @@ impl TryFrom<Vec<u8>> for Message {
         }
 
         trace!("full payload len: {}", payload_len);
-        trace!("masking key: {:02X?}", masking_key);
 
         let rec_msg = vec![0; payload_len as usize];
 
