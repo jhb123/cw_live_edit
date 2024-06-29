@@ -51,12 +51,16 @@ fn main() {
 
     let mut routes: RouteMapping = HashMap::new();
     routes.insert(r"^/$", index_handler);
+    routes.insert(r"^/about$", about_html);
 
     routes.insert(r"^/crossword.js$", crossword_js);
     routes.insert(r"^/dialog.js$", dialog_js);
     routes.insert(r"^/crossword.html$", crossword_html);
     routes.insert(r"^/crossword.css$", crossword_css);
     routes.insert(r"^/styles.css$", styles_css);
+    routes.insert(r"^/first_algorithm.svg$", first_algorithm_image);
+    routes.insert(r"^/banner.svg$", banner_image);
+    routes.insert(r"^/crossword_flow.png$", crossword_flow_handler);
 
 
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
@@ -355,12 +359,47 @@ fn dialog_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<Tcp
 fn crossword_html(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
     static_file_handler(stream, "static/crossword.html","text/html")
 }
+
 fn crossword_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
     static_file_handler(stream, "static/crossword.css","text/css")
 }
 
 fn styles_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
     static_file_handler(stream,"static/styles.css","text/css")
+}
+
+fn first_algorithm_image(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+    static_file_handler(stream,"static/first_algorithm.svg","image/svg+xml")
+}
+
+fn banner_image(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+    static_file_handler(stream,"static/banner.svg","image/svg+xml")
+}
+
+fn crossword_flow_handler(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+    image_file_handler(stream,"static/connection_flow.png","image/png")
+}
+
+fn image_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<TcpStream, HandlerError> {
+    let mut file = match File::open(path){
+        Ok(file) => file,
+        Err(error) => return Err(HandlerError::new(stream, error))
+    };
+
+    let mut contents = vec![];
+    if let Err(error) = file.read_to_end(&mut contents) {
+        return Err(HandlerError::new(stream, error))
+    };
+    
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_image_content(contents, content_type)
+        .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
 }
 
 fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<TcpStream, HandlerError> {
@@ -377,6 +416,25 @@ fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) ->
     let response = ResponseBuilder::new()
         .set_status_code(StatusCode::Ok)
         .set_content(contents, content_type)
+        .build();
+
+    match stream.write_all(response.as_bytes()) {
+        Ok(_) => Ok(stream),
+        Err(error) => Err(HandlerError::new(stream, error))
+    }
+}
+
+
+fn about_html(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+    let context = tera::Context::new();
+    let contents = match tera.render("about.html", &context){
+        Ok(contents) => contents,
+        Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
+    };
+
+    let response = ResponseBuilder::new()
+        .set_status_code(StatusCode::Ok)
+        .set_html_content(contents)
         .build();
 
     match stream.write_all(response.as_bytes()) {
@@ -523,7 +581,7 @@ fn log_out_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -
 fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
 
     match req {
-        HttpRequest::Get { status_line: _, headers:headers  } => {
+        HttpRequest::Get { status_line: _, headers: _  } => {
             let context = tera::Context::new();
             let contents = match tera.render("login.html", &context){
                 Ok(contents) => contents,

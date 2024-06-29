@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::{self, Display}};
+use std::{collections::HashMap, fmt::{self, Display}, str::{from_utf8_unchecked}};
 
 
 pub enum StatusCode {
@@ -199,6 +199,11 @@ impl ResponseBuilder  {
     
     pub fn set_text_content(&mut self, content: String) ->& mut Self {
         self.set_content(content, "text/plain; charset=utf-8")
+    }
+
+    pub fn set_image_content(&mut self, content: Vec<u8>, content_type: &str) ->& mut Self {
+        let content = unsafe { std::str::from_utf8_unchecked(&content) }; // AH!! 
+        self.set_content(content.to_string(), content_type)
     }
 
     pub fn set_html_content(&mut self, content: String) ->& mut Self {

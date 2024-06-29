@@ -18,6 +18,11 @@ path = "src/main.rs"
 name = "prune"
 path = "src/prune.rs"
 
+[[bin]]
+name = "echo"
+path = "src/echo.rs"
+
+
 [dependencies]
 anyhow = "1.0.86"
 base64 = "0.21.7"

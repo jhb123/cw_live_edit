@@ -19,31 +19,30 @@
 
     {# <h2>Test area</h2>
     <a href="/client-test">Client test</a> #}
-    <dialog class="relative rounded" id="signUpDialog">
-        <button class="absolute end-0 m-2 box-border rounded-xl bg-red-300 font-sm flex items-center justify-center text-white hover:shadow-lg h-4 w-4
-        ease-in duration-100" id="closeSignUpDialog"></button>
+    <dialog class="rounded bg-slate-50 dark:bg-slate-800 border" id="signUpDialog">
         <form class="p-3 flex flex-col space-y-2" id="signUp" hx-post='/sign-up' hx-swap="innerHTML"
             hx-target="#page-content">
-            <label for="usernameSignUp">Choose username</label>
+            <label class="text-slate-800 dark:text-slate-100" for="usernameSignUp">Choose username</label>
             <input class="custom-input" type="text" id="usernameSignUp" name="username" />
-            <label for="passwordSignUp">Choose password</label>
+            <label class="text-slate-800 dark:text-slate-100" for="passwordSignUp">Choose password</label>
             <input class="custom-input" type="password" id="passwordSignUp" name="password" required minlength="8" />
-            <label for="repeatPassword">Repeat password</label>
+            <label class="text-slate-800 dark:text-slate-100" for="repeatPassword">Repeat password</label>
             <input class="custom-input" type="password" id="repeatPassword" name="repeatPassword" required
                 minlength="8" />
             <input class="primary-button" type="submit">
+            <button class="primary-button" id="closeSignUpDialog">Close</button>
         </form>
     </dialog>
 
-    <dialog class="relative rounded" id="logInDialog">
+    <dialog class="rounded bg-slate-50 dark:bg-slate-800" id="logInDialog">
         <div hx-ext="response-targets">
-            <button class="absolute end-0 m-2 box-border rounded-xl bg-red-300 font-sm flex items-center justify-center text-white hover:shadow-lg h-4 w-4 ease-in duration-100" id="closeLogInDialog"></button>
             <form class="p-3 flex flex-col space-y-2" id="logIn" hx-post='/log-in' hx-target="#page-content" hx-target-error="#any-errors">
-                <label for="usernameLogIn">Username</label>
+                <label class="text-slate-800 dark:text-slate-100" for="usernameLogIn">Username</label>
                 <input class="custom-input" type="text" id="usernameLogIn" name="username" />
-                <label for="passwordLogIn">Password</label>
+                <label class="text-slate-800 dark:text-slate-100" for="passwordLogIn">Password</label>
                 <input class="custom-input" type="password" id="passwordLogIn" name="password" required minlength="8" />
                 <input class="primary-button" type="submit">
+                <button class="primary-button" id="closeSignUpDialog">Close</button>
                 <div id="any-errors"></div>
             </form>
         </div>
