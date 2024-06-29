@@ -16,7 +16,7 @@
         {% for puzzle in puzzles%}
         <tr>
             <td class="py-3 pr-8">{{puzzle.name}}</td>
-            <td><a class="primary-button" href="/puzzle/{{puzzle.id}}">Join</a></td>
+            <td><a class="primary-button no-underline" href="/puzzle/{{puzzle.id}}">Join</a></td>
         </tr>
         {% endfor %}
       </table>
@@ -29,10 +29,9 @@
             <label class="text-slate-800 dark:text-slate-100" for="usernameSignUp">Choose username</label>
             <input class="custom-input" type="text" id="usernameSignUp" name="username" />
             <label class="text-slate-800 dark:text-slate-100" for="passwordSignUp">Choose password</label>
-            <input class="custom-input" type="password" id="passwordSignUp" name="password" required minlength="8" />
+            <input class="custom-input" type="password" id="passwordSignUp" name="password" />
             <label class="text-slate-800 dark:text-slate-100" for="repeatPassword">Repeat password</label>
-            <input class="custom-input" type="password" id="repeatPassword" name="repeatPassword" required
-                minlength="8" />
+            <input class="custom-input" type="password" id="repeatPassword" name="repeatPassword" />
             <input class="primary-button" type="submit">
             <button class="primary-button" id="closeSignUpDialog">Close</button>
         </form>
@@ -44,9 +43,9 @@
                 <label class="text-slate-800 dark:text-slate-100" for="usernameLogIn">Username</label>
                 <input class="custom-input" type="text" id="usernameLogIn" name="username" />
                 <label class="text-slate-800 dark:text-slate-100" for="passwordLogIn">Password</label>
-                <input class="custom-input" type="password" id="passwordLogIn" name="password" required minlength="8" />
+                <input class="custom-input" type="password" id="passwordLogIn" name="password" minlength="8" />
                 <input class="primary-button" type="submit">
-                <button class="primary-button" id="closeSignUpDialog">Close</button>
+                <button class="primary-button" id="closeLogInDialog">Close</button>
                 <div id="any-errors"></div>
             </form>
         </div>
