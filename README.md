@@ -11,7 +11,7 @@ docker run -p 5051:5051 -v ./puzzles:/puzzles --init cw-grid-server
 otherwise, omit `--init`.
 ## Development
 ```
-cargo watch -i static
+RUST_LOG=info cargo watch -x run -i static
 ```
 Install tailwindcss and
 ```
