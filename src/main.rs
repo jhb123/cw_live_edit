@@ -35,7 +35,7 @@ impl HandlerError {
     }
 }
 
-type HandlerFn = fn(&HttpRequest, Arc<Tera>, TcpStream) -> Result<TcpStream, HandlerError>;
+type HandlerFn = fn(&HttpRequest, Arc<Tera>, TcpStream) -> Result<(), HandlerError>;
 type RouteMapping = HashMap<&'static str, HandlerFn>;
 
 fn main() {
@@ -58,7 +58,7 @@ fn main() {
     routes.insert(r"^/crossword.html$", crossword_html);
     routes.insert(r"^/crossword.css$", crossword_css);
     routes.insert(r"^/styles.css$", styles_css);
-    routes.insert(r"^/first_algorithm.svg$", first_algorithm_image);
+    routes.insert(r"^/crossword-pipeline.png$", crossword_algorithm_image);
     routes.insert(r"^/banner.svg$", banner_image);
     routes.insert(r"^/crossword_flow.png$", crossword_flow_handler);
 
@@ -133,10 +133,9 @@ fn handle_connection(stream: TcpStream, api: Arc<Api>) {
             error!("Error handling request {e}");
             api.bad_request(stream, &format!("Error handling request {e}")).unwrap_or_else(|err| {
                 match api.server_error(err.stream) {
-                    Ok(s) => return s,
+                    Ok(s) => (),
                     Err(e) => {
                         warn!("Could not send the internal server error page to the client: {}",e.error);
-                        return e.stream
                     }
                 }
             });
@@ -215,19 +214,19 @@ impl Api {
         Self { routes, tera }
     }
 
-    fn bad_request(&self, stream: TcpStream, message: &str) -> Result<TcpStream, HandlerError> {
+    fn bad_request(&self, stream: TcpStream, message: &str) -> Result<(), HandlerError> {
         let r = bad_request(Arc::clone(&self.tera), stream, message);
         trace!("Handled bad request");
         return r
     }
 
-    fn server_error(&self, stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    fn server_error(&self, stream: TcpStream) -> Result<(), HandlerError> {
         return server_error(Arc::clone(&self.tera),stream)
     }
 
 }
 
-fn server_error(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn server_error(tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
     let mut context = tera::Context::new();
     context.insert("status", "500");
     context.insert("message", "Internal Server Error");
@@ -239,12 +238,12 @@ fn server_error(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, Han
     let response = internal_error_response(&contents);
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
 
     match req {
         HttpRequest::Get { status_line: _, headers } => {
@@ -278,7 +277,7 @@ fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> R
                 .build();
             
             match stream.write_all(response.as_bytes()) {
-                Ok(_) => Ok(stream),
+                Ok(_) => Ok(()),
                 Err(error) => Err(HandlerError::new(stream, error))
             }
         },
@@ -288,7 +287,7 @@ fn index_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> R
     }    
 }
 
-fn not_found(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> Result<TcpStream, HandlerError> {
+fn not_found(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> Result<(), HandlerError> {
     let mut context = tera::Context::new();
     context.insert("status", "404");
     context.insert("message", message.unwrap_or("Not Found"));
@@ -303,12 +302,12 @@ fn not_found(tera: Arc<Tera>, mut stream: TcpStream, message: Option<&str>) -> R
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<TcpStream, HandlerError> {
+fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<(), HandlerError> {
     let mut context = tera::Context::new();
     context.insert("status", "400");
     context.insert("message", message );
@@ -323,12 +322,12 @@ fn bad_request(tera: Arc<Tera>, mut stream: TcpStream, message: &str) -> Result<
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn not_authorised(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn not_authorised(tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
     let mut context = tera::Context::new();
     context.insert("status", "401");
     context.insert("message", "Not authorised" );
@@ -343,44 +342,44 @@ fn not_authorised(tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, H
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn crossword_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     static_file_handler(stream, "static/crossword.js","text/javascript")
 }
 
-fn dialog_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn dialog_js(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     static_file_handler(stream, "static/dialog.js","text/javascript")
 }
 
-fn crossword_html(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn crossword_html(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     static_file_handler(stream, "static/crossword.html","text/html")
 }
 
-fn crossword_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn crossword_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     static_file_handler(stream, "static/crossword.css","text/css")
 }
 
-fn styles_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn styles_css(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     static_file_handler(stream,"static/styles.css","text/css")
 }
 
-fn first_algorithm_image(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
-    static_file_handler(stream,"static/first_algorithm.svg","image/svg+xml")
+fn crossword_algorithm_image(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
+    image_file_handler(stream,"static/crossword-pipeline.png","image/png")
 }
 
-fn banner_image(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn banner_image(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     static_file_handler(stream,"static/banner.svg","image/svg+xml")
 }
 
-fn crossword_flow_handler(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn crossword_flow_handler(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     image_file_handler(stream,"static/connection_flow.png","image/png")
 }
 
-fn image_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<TcpStream, HandlerError> {
+fn image_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<(), HandlerError> {
     let mut file = match File::open(path){
         Ok(file) => file,
         Err(error) => return Err(HandlerError::new(stream, error))
@@ -397,12 +396,12 @@ fn image_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> 
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<TcpStream, HandlerError> {
+fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<(), HandlerError> {
     let mut file = match File::open(path){
         Ok(file) => file,
         Err(error) => return Err(HandlerError::new(stream, error))
@@ -419,13 +418,13 @@ fn static_file_handler(mut stream: TcpStream, path: &str, content_type: &str) ->
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
 
-fn about_html(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)  -> Result<TcpStream, HandlerError> {
+fn about_html(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)  -> Result<(), HandlerError> {
     let context = tera::Context::new();
     let contents = match tera.render("about.html", &context){
         Ok(contents) => contents,
@@ -438,12 +437,12 @@ fn about_html(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)  -> Re
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
 
     match req {
         HttpRequest::Get { status_line: _, headers: _ } => {
@@ -459,7 +458,7 @@ fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) ->
                 .build();
         
             match stream.write_all(response.as_bytes()) {
-                Ok(_) => Ok(stream),
+                Ok(_) => Ok(()),
                 Err(error) => Err(HandlerError::new(stream, error))
             }
         },
@@ -541,7 +540,7 @@ fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) ->
                 .build();
             
             match stream.write_all(response.as_bytes()) {
-                Ok(_) => Ok(stream),
+                Ok(_) => Ok(()),
                 Err(error) => Err(HandlerError::new(stream, error))
             }
 
@@ -549,7 +548,7 @@ fn sign_up_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) ->
     }    
 }
 
-fn log_out_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn log_out_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
 
     let mut context = tera::Context::new();
     let puzzle_data = match get_all_puzzle_db(){
@@ -573,12 +572,12 @@ fn log_out_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -
                 .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
 
     match req {
         HttpRequest::Get { status_line: _, headers: _  } => {
@@ -594,7 +593,7 @@ fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
                 .build();
         
             match stream.write_all(response.as_bytes()) {
-                Ok(_) => Ok(stream),
+                Ok(_) => Ok(()),
                 Err(error) => Err(HandlerError::new(stream, error))
             }
         },
@@ -669,14 +668,14 @@ fn log_in_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
                 .build();
             
             match stream.write_all(response.as_bytes()) {
-                Ok(_) => Ok(stream),
+                Ok(_) => Ok(()),
                 Err(error) => Err(HandlerError::new(stream, error))
             }
         },
     }    
 }
 
-fn client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
 
     let mut context = tera::Context::new();
     context.insert("name", "Test clients");
@@ -692,12 +691,12 @@ fn client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) 
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn add_client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn add_client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
     // acquire the html of the page.
     // let status_line = match req {
     //     HttpRequest::Get { status_line, .. } => status_line,
@@ -719,13 +718,13 @@ fn add_client_test_handler(_: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStre
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
 
-fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
     // acquire the html of the page.
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
@@ -763,12 +762,12 @@ fn puzzle_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> 
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
 }
 
-fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) -> Result<TcpStream, HandlerError>  {
+fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) -> Result<(), HandlerError>  {
 
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
@@ -789,7 +788,7 @@ fn puzzle_handler_data(req: &HttpRequest, _tera: Arc<Tera>, stream: TcpStream) -
     }
 }
 
-fn puzzle_soft_delete_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError>  {
+fn puzzle_soft_delete_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError>  {
 
     let (status_line, headers) = match req {
         HttpRequest::Get { status_line, headers, .. } => (status_line, headers),
@@ -819,13 +818,13 @@ fn puzzle_soft_delete_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: Tc
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => Ok(stream),
+        Ok(_) => Ok(()),
         Err(error) => Err(HandlerError::new(stream, error))
     }
     
 }
 
-fn puzzle_handler_live(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn puzzle_handler_live(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
 
     let status_line = match req {
         HttpRequest::Get { status_line, .. } => status_line,
@@ -875,7 +874,7 @@ struct AddPuzzleBody{
     crossword: Crossword
 }
 
-fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
 
     let _status_line = match req {
         HttpRequest::Get {  .. } => return bad_request(tera, stream, "Unsupported http method"),
@@ -926,7 +925,7 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
                 .build();
 
             match stream.write_all(response.as_bytes()) {
-                Ok(_) => return Ok(stream),
+                Ok(_) => return Ok(()),
                 Err(error) => return Err(HandlerError::new(stream, error))
             }
 
@@ -935,7 +934,7 @@ fn puzzle_add_handler(req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream)
 
 }
 
-fn puzzle_list_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+fn puzzle_list_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStream) -> Result<(), HandlerError> {
     let puzzle_data = match get_all_puzzle_db(){
         Ok(puzzle_data) => puzzle_data,
         Err(error) => return Err(HandlerError::new(stream, Error::new(ErrorKind::Other, format!("{}",error))))
@@ -955,7 +954,7 @@ fn puzzle_list_handler(_req: &HttpRequest, tera: Arc<Tera>, mut stream: TcpStrea
         .build();
 
     match stream.write_all(response.as_bytes()) {
-        Ok(_) => return Ok(stream),
+        Ok(_) => return Ok(()),
         Err(error) => return Err(HandlerError::new(stream, error))
     }
 
@@ -979,7 +978,7 @@ impl PuzzlePool {
         Self { pool, tera: Arc::new(tera) }
     }
 
-    fn connect_client(&mut self, puzzle_num: i64, stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    fn connect_client(&mut self, puzzle_num: i64, stream: TcpStream) -> Result<(), HandlerError> {
 
 
         match self.pool.get(&puzzle_num) {
@@ -1009,7 +1008,7 @@ impl PuzzlePool {
         }
     }
 
-    fn get_grid_data(&mut self, puzzle_num: i64, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    fn get_grid_data(&mut self, puzzle_num: i64, mut stream: TcpStream) -> Result<(), HandlerError> {
         self.pool.iter().for_each(|(name,_)|{
             info!("channel {}",name)
         });
@@ -1050,7 +1049,7 @@ impl PuzzlePool {
                         .build();
 
                         match stream.write_all(response.as_bytes()) {
-                            Ok(_) => return Ok(stream),
+                            Ok(_) => return Ok(()),
                             Err(error) => return Err(HandlerError::new(stream, error))
                         }
                     },
@@ -1203,7 +1202,7 @@ impl PuzzleChannel {
     }
 
 
-    fn send_puzzle(&self, mut stream: TcpStream) -> Result<TcpStream, HandlerError> {
+    fn send_puzzle(&self, mut stream: TcpStream) -> Result<(), HandlerError> {
         let grid = match self.crossword.lock() {
             Ok(grid) => grid,
             Err(e) => {
@@ -1224,7 +1223,7 @@ impl PuzzleChannel {
         .set_json_content(contents)
         .build();
         match stream.write_all(response.as_bytes()) {
-            Ok(_) => Ok(stream),
+            Ok(_) => Ok(()),
             Err(error) => Err(HandlerError::new(stream, error))
         }
     }
@@ -1274,7 +1273,7 @@ impl Drop for PuzzleChannel {
 }
 
 
-fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpStream, tera: Arc<Tera>) -> Result<TcpStream, HandlerError>{
+fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpStream, tera: Arc<Tera>) -> Result<(), HandlerError>{
 
     let stream_clone = match stream.try_clone(){
         Ok(stream) => stream,
@@ -1459,5 +1458,5 @@ fn route_stream_to_puzzle(puzzle_channel: Arc<Mutex<PuzzleChannel>>,stream: TcpS
 
 
     info!("Routed client to puzzle");
-    Ok(stream_clone)
+    Ok(())
 }
