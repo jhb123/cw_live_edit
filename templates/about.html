@@ -18,118 +18,50 @@
     <p>This is where this project comes in. There are two main aspects to flow above. You need to be able to take a
         picture of a puzzle you have and you need to be able to solve it in real-time with your friends. You can begin
         solving puzzles from <a href="/">the main page</a>, and you can start digitising your own puzzles with the
-        android client.</p>
-    <h2>A little bit more 'what is this?'</h2>
-    <p>This project is two things. It is something I wanted to make and a chance to learn some new skills. It takes the
-        form of:</p>
-    <ul>
-        <li>An android client that lets you take a picture of a crossword, digitise, share and solve it.</li>
-        <li>A webclient that lets you solve puzzles.</li>
-        <li>A server written made from scratch (mostly) using the Rust.</li>
-    </ul>
-    <p>
-        The server code could have been made more easily by relying of a framework, but I wanted to challenge myself to
-        create a some well-structured, reusable code.
+        android client.
     </p>
     <p>
-        It's probably always going to be 80% done since I can always think of some other nice feature to add or some
-        detail to finesse. I could keep polishing some parts of the user experience. I could care about mallicious
-        people who want to attack this server or write profanities into the publically viewable site which I mentioned
-        on my CV. I could improve to how users store and retrieve their puzzles. I could add different types of user
-        permissions. I could probably optimse the server. I could add the ability to process a photo of a crossword to
-        the server. I could spend time fixing some bugs, but I'll only do this if is a really bad one. This project
-        already has enough of the features I want, I feel like my rate of learning on this project has slowed down and
-        I've enough fun with this project for the moment. That's not to say I won't come back to this project one day.
-        After all, this is the third iteration of it.
+        The main parts of the project are an android client that lets you take a picture of a crossword, digitise, share and solve it and a server made from scratch (mostly) using the Rust.
     </p>
-    <p>
-        The rest of this page is devoted to the "how I got here" journey, dividing this project into 3 chapters.
-    </p>
-    <h2>The Start</h2>
-    <div class="flex flex-row gap-x-4">
-        <a target="_blank" rel="noopener noreferrer nofollow"
-            href="https://camo.githubusercontent.com/17b19bec5d5214f5b217feaeb0bbdb1300e6f47e41b3c15d03a53a774c1db938/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6f70656e63762d25323377686974652e7376673f7374796c653d666f722d7468652d6261646765266c6f676f3d6f70656e6376266c6f676f436f6c6f723d7768697465"><img
-                src="https://camo.githubusercontent.com/17b19bec5d5214f5b217feaeb0bbdb1300e6f47e41b3c15d03a53a774c1db938/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6f70656e63762d25323377686974652e7376673f7374796c653d666f722d7468652d6261646765266c6f676f3d6f70656e6376266c6f676f436f6c6f723d7768697465"
-                alt="OpenCV"
-                data-canonical-src="https://img.shields.io/badge/opencv-%23white.svg?style=for-the-badge&amp;logo=opencv&amp;logoColor=white"
-                style="max-width: 100%;"></a>
 
-        <a target="_blank" rel="noopener noreferrer nofollow"
-            href="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54"><img
-                src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54"
-                alt="Python" style="max-width: 100%;"></a>
-
-    </div>
+    <h2>Creating an Android App Which Employs OpenCV and Optical Character Recognition to Digitise Crosswords</h2>
     <p>
-        Near the end of 2022, I was made redundant. I was working on signal processing algorithms for a novel type of
-        hardware, and I spent a lot of my time creating simulations with Python scripts. I knew enough Python to get by,
-        but I was by no means a software engineer. By the time I was made rednundant, I'd had enough of the type of work
-        I was doing and I knew some people who really liked their jobs in software, so I got a copy of "Cracking the
-        Coding Interview" and one of the things it said was good to do was create a project. I'd had a decent amount of
-        experience with Python and signal processing, and so I started working on something that combined the two
-        things. <a href="https://github.com/jhb123/crosswordScan">This</a> was the first iteration of "CrosswordScan".
+        I split the process of digitising the crosswords into determining the structure of the crossword grid and
+        detecting the hints. The structural information and the hint form a "clue". Users first capture the grid with
+        one photograph with the help of a viewfinder which gives them live feedback by way of a contour which highlights
+        where in the image the crossword may be located, and then are given interface for extracting clues where they
+        select a region of interest to scan. While it was conceivable that with one button press, I could digitise a
+        crossword, in reality it was much more reliable to let the user have a chance to redo the optical character
+        recognition part of the algorithm if there were innacurate scans.
     </p>
     <p>
-        In a few weeks, I put together something that used OpenCV to process a photograph of a crossword grid into a
-        data structure. Much of the original algorithm for extracting grid is still used in the project, albeit with a
-        few bug fixes and its now written in Kotlin. I also figured out how to use Tesseract to extract the clues from
-        the page as well. It was satisfying using this set of scripts from the command line to digitise puzzles.
+        I created a classical image processing pipeline using OpenCV to process a photograph of a crossword grid into a
+        data structure. This algorithm was prototyped in Python, and eventually translated into Kotlin (<a
+            href="https://github.com/jhb123/crosswordScan">original repo</a>) for the Android App. The <a
+            href="#processing-algo">diagram</a> below gives an overview of how this algorithm works. This part of the
+        process for digitising the crossword works fairly robustly, and with it you get a "hint-less" version of the
+        final puzzle.
     </p>
-    <figure class="my-5">
-        <img class="mx-auto bg-clip-border rounded-3xl" src="/first_algorithm.svg"
-            alt="The first processing algorithm" />
-        <figcaption class="mx-auto text-center italic">Don't worry, this isn't a UML diagram. This is a schematic of the
-            first image processing pipeline.</figcaption>
+    <figure class="my-5" id="processing-algo">
+        <img class="mx-auto bg-clip-border rounded-3xl" src="/crossword-pipeline.png" alt="The processing algorithm" />
+        <figcaption class="mx-auto text-center italic">Schematic of the processing pipeline for extracting the grid.
+            First, the grid is found by looking for the largest square in the frame. Next, the cells within the grid are
+            located. Finally, the cells are grouped into clues.</figcaption>
     </figure>
     <p>
-        Not long after I started this project, I got a new job in a "System Integration and Test (SIT) Engineer" for a
-        company that made software. I put this project down for a few months while I was finding my feet and learning
-        how the various software teams I worked with operated, but I'd left the project in a state which was reasonably
-        well documented so that I could come back to it later and remember how it worked since the algorithm for
-        extracting the puzzles took quite a bit of tinkering. The goal of software solving crosswords collaboratively in
-        real-time collaborative was something I wanted to from the outset, but I knew that do this, I needed to learn
-        more about software than how to write Python scripts.
+        To digitise the hints for the clues, I used a ready-made implementation of optical character recognition (OCR)
+        developed by Google. This was combined with regexes to determine how to map the text on a page with the clues in
+        the datastruture representing the puzzle. The hints often take a form like <i>10. Argue Score? (8,4)</i> <a
+            href="#footnote-1">[1]</a>. Since OCR sometimes mistakes characters like "5" for "S", the regexes for
+        digitising the hints needed to account for several known-bad characters.
     </p>
-    <h2>Creating the Android App</h2>
-    <div class="flex flex-row gap-x-4">
-        <a target="_blank" rel="noopener noreferrer nofollow"
-            href="https://camo.githubusercontent.com/ce54b742cd3861e20b7c3e342f923f5f36edd27cce8092e68a802de035ce79d8/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6b6f746c696e2d2532333746353246462e7376673f7374796c653d666f722d7468652d6261646765266c6f676f3d6b6f746c696e266c6f676f436f6c6f723d7768697465"><img
-                src="https://camo.githubusercontent.com/ce54b742cd3861e20b7c3e342f923f5f36edd27cce8092e68a802de035ce79d8/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6b6f746c696e2d2532333746353246462e7376673f7374796c653d666f722d7468652d6261646765266c6f676f3d6b6f746c696e266c6f676f436f6c6f723d7768697465"
-                alt="Kotlin"
-                data-canonical-src="https://img.shields.io/badge/kotlin-%237F52FF.svg?style=for-the-badge&amp;logo=kotlin&amp;logoColor=white"
-                style="max-width: 100%;"></a>
-        <a target="_blank" rel="noopener noreferrer nofollow"
-            href="https://camo.githubusercontent.com/214d3c29a72c22fe498ea0f7d6d2cdbde23331791f97be24d817338c699084b5/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f416e64726f69642d3344444338343f7374796c653d666f722d7468652d6261646765266c6f676f3d616e64726f6964266c6f676f436f6c6f723d7768697465"><img
-                src="https://camo.githubusercontent.com/214d3c29a72c22fe498ea0f7d6d2cdbde23331791f97be24d817338c699084b5/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f416e64726f69642d3344444338343f7374796c653d666f722d7468652d6261646765266c6f676f3d616e64726f6964266c6f676f436f6c6f723d7768697465"
-                alt="Android"
-                data-canonical-src="https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&amp;logo=android&amp;logoColor=white"
-                style="max-width: 100%;"></a>
-        <a target="_blank" rel="noopener noreferrer nofollow"
-            href="https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white"><img
-                src="https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white"
-                alt="AWS"
-                data-canonical-src="https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white"
-                style="max-width: 100%;"></a>
-
-    </div>
     <p>
-        While I was a SIT engineer, I wasn't facing interesting technical challenges at work and I wanted to develop the
-        hard software development skills such a:</p>
-    <ul>
-        <li>Learning how to make a GUI. I'd contributed to a <a
-                href="https://github.com/jhb123/laser_control">project</a> while I was doing my undergraduate degree
-            which included a GUI made with QT and C++. Honestly, I have no idea which bits I actually worked on, but I
-            do remember at the end of the project, we made a touch screen interface for a laser system. That was years
-            ago, and for this new project, I wanted to learn some stuff about the architecture of code for GUIs.</li>
-        <li>I wanted to learn what Docker is and why everyone kept talking about it.</li>
-        <li>I wanted to dabble with AWS, hopefully without spending all of my money by accident.</li>
-        <li>Make some CI/CD.</li>
-    </ul>
-    <p>
-        So I decided to work on an App and a server that lets people share puzzles. I chose to stick with Python and
-        make the server with Flask. I took some courses on Android and AWS to get the lay of the land.
+        The android client was made with the Jetpack compose framework and followed an MVVM architecture. The repo is <a
+            href="https://github.com/jhb123/crossword-scan-app">here</a>. The app is made up of screens for scanning the
+        puzzle, an authenitication/sign-up screens, and a screen for solving puzzles. A demo of the app is shown <a
+            href="#app-video">below</a>.
     </p>
-    <figure>
+    <figure id="app-video">
         <iframe class="mx-auto" width="280" height="600"
             src="https://www.youtube.com/embed/3uyVu4ZbNm8?si=OjBp2Dg9bqlcpGZ2" title="YouTube video player"
             frameborder="0"
@@ -137,112 +69,100 @@
             referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
         <figcaption class="mx-auto text-center italic">Digitising crosswords with the app.</figcaption>
     </figure>
+    <h2>Creating The Server for Solving Crosswords Collaborively in Real-time.</h2>
     <p>
-        The android client was made with the Jetpack compose framework. I tried to follow an MVVM architecture, and this
-        was the first time I had really come across the concept of software architecture in a way that made sense. I had
-        previously thought that if you drew a bunch of arrows between some boxes which described classes, you'd done
-        your architecting. However, it turns out that you just end up with a jumble of jibberish code that makes no
-        sense to anyone else if you do that.
-    <p>
-        When people refer to software architecture, it is probably a good idea to think about classical architecture. A
-        lot of those buildings all share similar features like porticos, pillasters, columns, coffers and cornices, and
-        a lot of them are basically cut+paste (or taken from plaster casts) from other buildings. In otherwords, there
-        is a highly specific language for describing the components that make up most classical buildings and once
-        you've seen one, you've seen many patterns that recur in all the others.
+        There are plenty of frameworks with which you can make a webserver, but I decided to make my own from scratch
+        using Rust. <a href="https://doc.rust-lang.org/stable/book/">The Rust Book</a> gives you a good starting point
+        for making a multithreaded webserver, so I based my project on this. On top of the server described in the
+        Rustbook, I implemented the a signficiant portion of the websocket protocol, a route handler to make it easy for
+        me to add an endpoint with error handling, a response builder to make creating responses easy, a cookie-based authenitication system, and a way to
+        manage multiple users interacting with the same puzzle.
     </p>
     <p>
-        Software and real architecture have quite different goals. Contempory architects all want to make interesting,
-        unique looking buildings. Software architecture on the hand exists the following conversation possible "my
-        repository stores "x", and to show this data to the user in a view, I've create a two way databinding between
-        the view and the repository with a view model", or more briefly "I used MVVM" and everyone gets the jist of how
-        its working without having to read to much code. Individuality is not a great thing here.
+        The source of truth for the puzzle is located on the server. An overview of the the interactions between the
+        client and the server is shown in the <a href="#client-server-diagram">diagram below</a>. If the puzzle is not
+        being solved, it is stored on
+        disk. If someone has established a websocket connection with the server for that puzzle, then that puzzle will
+        be loaded into memory. Whenever the user updates one of the letters in the grid, they are sending a small
+        message to the server over the websocket. The server recieves this data, and it aquires a mutex on the crossword
+        data structure, updates it, and broadcasts the change to all the connected clients. When the server detects that
+        there are no more clients attached to the puzzle, the puzzle is serialised and the on-disk puzzle is updated.
     </p>
     <p>
-        The design of the android client seems to have held up. The very first versions of the app actually used the XML
-        layouts and fragments, so fair amount of time was spent migrating that code to Compose midway through the
-        project. I enjoyed using Jetpack compose, and I was able to come back to this project after 6 months and add new
-        behaviour without too much hassle. I wouldn't give myself too much credit for doing this, though. With a big
-        framework, you do things in the frameworks way or you don't do it unless you're ready to fight it.
-    <p>
-        While it was conceivable that with one button press, I could digitise a crossword, in reality it was much more
-        reliable to let the user have a few goes at extract clues from the text. Because of this, I made a series of
-        screens that were designed to handle the scanning the grid, scanning the clues and reviewing the puzzle before
-        uploading it. There was a screen for selecting one of the puzzles on your device or downloading one from the
-        server, and a screen for solving the puzzle.
+        Each websocket connect established three threads. One to receive messages from the client, one to send messages
+        to the client from the other clients, and one which sends ping/pong messages. Its implemented with threads and
+        multi-sender-single-consumers rather than using an asynchronous Rust runtime. The client is removed from the
+        puzzle pool if the ping/pong messages are not responded too or if a close message is recieved.
     </p>
-    <p>
-        I feel like that part of the project went pretty well. However, the server was less good. The reasons for this
-        can basically be summarised as "over engineering". Here are some examples:
-    <ul>
-        <li>
-            My requirements for a database was simple, maybe even trivial, and a sqlite database would have been fine
-            but I used DynamoDB. With that descison, I had to make loads additional API calls, deal with stuff that is
-            like ensuring that usernames and emails were unique in the NoSQL way and handling all the possible ways that
-            could go wrong. But at least NoSQL is easier to scale, which really mattered since I might end up with
-            millions of users?
-        </li>
-        <li>
-            I was so concerned with the integrity of the puzzle's underlying data that I didn't implement the
-            collaboritive aspect of the project. Basically, I thought that users would find it frustrating if they were
-            solving a puzzle offline, reconnected, and that downloaded a bunch of changes which were different to the
-            ones they had made. I thought the only reasonable solution was to provide something akin to git merge
-            conflicts. Obviously this was a terrible idea.
-        </li>
-        <li>
-            It was deployed as Lambda functions using Zappa. This was because I was optimising the cheapness of the
-            project. This worked when I first released the project, but after ignoring it for a few months, something
-            broke due to a dependency issue and fixing it was something I had no time for.
-        </li>
-    </ul>
-    </p>
-    <p>
-        The part of the server which seemed ok way the standalone, dockerised version of it. Learning to make Docker
-        images turned out to be fairly straight forward. Making tiny ones which build quickly requires you to have a few
-        tricks up your sleave, but in my case, I didn't care about that too much. Having a easy way to deploy the server
-        was my primary goal when I first set up the docker image, and if I knew about digital ocean droplets back then,
-        I probably would still be using that server code.
-    </p>
-    <p>
-        With this project, I created some CI/CD. I generated code coverage reports for the server and published them to
-        a special repo, and I deployed the app to the app store with Fastlane. Overall, I probably spent more time
-        setting this up than it saved me, but it was fun to see this stuff in action.
-    </p>
-    <h2>Making the real time, collaborative server.</h2>
-    <p>
-        I put this project down for a few months while I learnt the basics of Rust, Javascript and the variety of ways
-        you can make websites. I made some toy blog websites to learn develop these skills. I wanted to remake the
-        server with Rust and I wanted to deploy it in a simpler way. The rust book teaches you how to make a
-        multi-threaded http server, so I used that as my starting point.
-    </p>
-    <p>
-    <ul>
-        <li>I created a response builder which let me creating responses for each endpoints.</li>
-        <li>
-            I implemented a router which matched incoming requests with regexes. This was needed for path variables to
-            work.
-        </li>
-        <li>I implemented most of the websocket protocol.</li>
-        <li>I made something that I called the "Puzzle Pool".</li>
-    </ul>
-    </p>
-    <p>
-        The source of truth for the puzzle is located on the server. If the puzzle is not being solved, it is stored on disk. If someone has established a websocket connection with the server for that puzzle, then that puzzle will be loaded into memory. Whenever the user updates one of the letters in the grid, they are sending a small message to the server over the websocket. The server recieves this data, and it aquires a mutex on the crossword data structure, updates it, and broadcasts the change to all the connected clients. When the server detects that there are no more clients attached to the puzzle, the puzzle is serialise.
-    </p>
-    <p>
-        Each websocket connect established three threads. One to receive messages from the client, one to send messages to the client from the other clients, and one which sends ping/pong messages. Its implemented with threads and multi-sender-single-consumers rather than using an asynchronous Rust runtime. 
-    </p>
-    <figure>
+    <figure id="client-server-diagram">
         <img class="mx-auto bg-clip-border rounded-3xl" src="/crossword_flow.png" />
         <figcaption class="mx-auto text-center italic">A doodle showing how the client and the server work.</figcaption>
     </figure>
     <p>
-        I created a fairly simple client. I made a javascript web component, but in retrospect I would have just used plain old html and javascript since there are no other elements on the screen.
+        The following types summarise how the route handler works.
     </p>
+    <!-- HTML generated using hilite.me -->
+    <div
+        style="background: #202020; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;">
+        <pre style="margin: 0; line-height: 125%"><span style="color: #6ab825; font-weight: bold">type</span> <span style="color: #d0d0d0">HandlerFn</span> <span style="color: #d0d0d0">=</span> <span style="color: #6ab825; font-weight: bold">fn</span><span style="color: #d0d0d0">(&amp;HttpRequest,</span> <span style="color: #d0d0d0">Arc&lt;Tera&gt;,</span> <span style="color: #d0d0d0">TcpStream)</span> <span style="color: #d0d0d0">-&gt;</span> <span style="color: #d0d0d0">Result&lt;(),</span> <span style="color: #d0d0d0">HandlerError&gt;;</span>
+<span style="color: #6ab825; font-weight: bold">type</span> <span style="color: #d0d0d0">RouteMapping</span> <span style="color: #d0d0d0">=</span> <span style="color: #d0d0d0">HashMap&lt;&amp;</span><span style="color: #a61717; background-color: #e3d2d2">&#39;</span><span style="color: #6ab825; font-weight: bold">static</span> <span style="color: #6ab825; font-weight: bold">str</span><span style="color: #d0d0d0">,</span> <span style="color: #d0d0d0">HandlerFn&gt;;</span>
+</pre>
+    </div>
     <p>
-        With digital ocean, you can rent a linux server and run what ever software you want on it for a pretty
-        reasonable seeming price. I set up nginx as a reverse proxy, and deployed the <a
-            href="https://live-crossword.net">main site</a> and the <a href="https://stage.live-crossword.net">staging
-            site</a> with Docker compose. Its all very easy to manage and I can manage it however I like.
+        The <code>HandlerFn</code> takes an enum that is designed to represent the HTTP verbs (but I never implemented
+        them all), a <a href="https://keats.github.io/tera/docs/">Tera</a> struct for rendering HTML and the TCP stream.
+        It returns a result which is used to provide default error handling like 400/500 responses. The route mapping lets you specify a route with a regex. The interaction between an incoming TCP stream and the endpoint is managed by an API struct. A simple route (e.g. this page) can be set up with a relative amount of ease.
     </p>
+    <!-- HTML generated using hilite.me --><div style="background: #202020; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #6ab825; font-weight: bold">fn</span> <span style="color: #d0d0d0">main()</span> <span style="color: #d0d0d0">{</span>
+    <span style="color: #d0d0d0">...</span>
+    <span style="color: #6ab825; font-weight: bold">let</span> <span style="color: #6ab825; font-weight: bold">mut</span> <span style="color: #d0d0d0">routes:</span> <span style="color: #d0d0d0">RouteMapping</span> <span style="color: #d0d0d0">=</span> <span style="color: #d0d0d0">HashMap::new();</span>
+    <span style="color: #d0d0d0">routes.insert(r</span><span style="color: #ed9d13">&quot;^/about$&quot;</span><span style="color: #d0d0d0">,</span> <span style="color: #d0d0d0">about_html);</span>
+
+    <span style="color: #d0d0d0">...</span>
+    <span style="color: #6ab825; font-weight: bold">let</span> <span style="color: #d0d0d0">tera_arc</span> <span style="color: #d0d0d0">=</span> <span style="color: #d0d0d0">Arc::new(tera);</span>
+    <span style="color: #6ab825; font-weight: bold">let</span> <span style="color: #d0d0d0">api:</span> <span style="color: #d0d0d0">Api</span> <span style="color: #d0d0d0">=</span> <span style="color: #d0d0d0">Api::register_routes(routes,</span> <span style="color: #d0d0d0">tera_arc);</span>
+    <span style="color: #d0d0d0">...</span>
+<span style="color: #d0d0d0">}</span>
+    
+<span style="color: #6ab825; font-weight: bold">fn</span> <span style="color: #d0d0d0">about_html(_req:</span> <span style="color: #d0d0d0">&amp;HttpRequest,</span> <span style="color: #d0d0d0">tera:</span> <span style="color: #d0d0d0">Arc&lt;Tera&gt;,</span> <span style="color: #6ab825; font-weight: bold">mut</span> <span style="color: #d0d0d0">stream:</span> <span style="color: #d0d0d0">TcpStream)</span>  <span style="color: #d0d0d0">-&gt;</span> <span style="color: #d0d0d0">Result&lt;(),</span> <span style="color: #d0d0d0">HandlerError&gt;</span> <span style="color: #d0d0d0">{</span>
+    <span style="color: #6ab825; font-weight: bold">let</span> <span style="color: #d0d0d0">context</span> <span style="color: #d0d0d0">=</span> <span style="color: #d0d0d0">tera::Context::new();</span>
+    <span style="color: #6ab825; font-weight: bold">let</span> <span style="color: #d0d0d0">contents</span> <span style="color: #d0d0d0">=</span> <span style="color: #6ab825; font-weight: bold">match</span> <span style="color: #d0d0d0">tera.render(</span><span style="color: #ed9d13">&quot;about.html&quot;</span><span style="color: #d0d0d0">,</span> <span style="color: #d0d0d0">&amp;context){</span>
+        <span style="color: #d0d0d0">Ok(contents)</span> <span style="color: #d0d0d0">=&gt;</span> <span style="color: #d0d0d0">contents,</span>
+        <span style="color: #d0d0d0">Err(error)</span> <span style="color: #d0d0d0">=&gt;</span> <span style="color: #6ab825; font-weight: bold">return</span> <span style="color: #d0d0d0">Err(HandlerError::new(stream,</span> <span style="color: #d0d0d0">Error::new(ErrorKind::Other,</span> <span style="color: #d0d0d0">format!(</span><span style="color: #ed9d13">&quot;{}&quot;</span><span style="color: #d0d0d0">,error))))</span>
+    <span style="color: #d0d0d0">};</span>
+    
+    <span style="color: #6ab825; font-weight: bold">let</span> <span style="color: #d0d0d0">response</span> <span style="color: #d0d0d0">=</span> <span style="color: #d0d0d0">ResponseBuilder::new()</span>
+        <span style="color: #d0d0d0">.set_status_code(StatusCode::Ok)</span>
+        <span style="color: #d0d0d0">.set_html_content(contents)</span>
+        <span style="color: #d0d0d0">.build();</span>
+
+    <span style="color: #6ab825; font-weight: bold">match</span> <span style="color: #d0d0d0">stream.write_all(response.as_bytes())</span> <span style="color: #d0d0d0">{</span>
+        <span style="color: #d0d0d0">Ok(_)</span> <span style="color: #d0d0d0">=&gt;</span> <span style="color: #d0d0d0">Ok(()),</span>
+        <span style="color: #d0d0d0">Err(error)</span> <span style="color: #d0d0d0">=&gt;</span> <span style="color: #d0d0d0">Err(HandlerError::new(stream,</span> <span style="color: #d0d0d0">error))</span>
+    <span style="color: #d0d0d0">}</span>
+<span style="color: #d0d0d0">}</span>
+</pre></div>
+<p>That was a very brief overview of how the server works. Check out the <a href="https://github.com/jhb123/cw_live_edit">repo</a> if you're interested in looking at the code in more detail.</p>
+<h2>Closing words</h2>
+<p>
+    This project is probably always going to be 80% done since I can always think of some other nice feature to add, some
+    detail to finesse or a refactor that would improve the quality of the code. A non-exhaustive list in no particular order:
+</p>
+
+    <ul>
+        <li>Polish the app. Considering this was the first proper app I made, it's alright. It went through a signficant upgrade/rewrining to switch from an old backend which couldn't do collaborative solving to the one described above. Upgrading the app to the websocket-based server was very much a minimal-viable-product approach and there are features like puzzle icons that didn't get reimplemented. Additionally, I would like to spend time improving the composable functions since they seem to suffer from "prop drilling".</li>
+        <li>
+            I could add something to stop mallicious
+            people who want to attack this server or write profanities into the publically viewable site which I mentioned
+            on my CV.
+        </li>
+        <li>
+            The database could be made more sophisticated. I could set up the database to associate the puzzles with users by way of a junction table. I could add different types of users with permitted actions.
+        </li>
+    </ul>
+    <p>
+        However, this project already has enough of the features I want and I've got other projects I want to work on, so this project will be put into the feature-freeze mode for the time being.
+    </p>
+    <p id="footnote-1">[1] The answer is <i>question mark</i>.</p>
 </div>
 {% endblock %}

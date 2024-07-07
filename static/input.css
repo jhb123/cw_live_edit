@@ -45,20 +45,20 @@
     }
   
     .about h1 {
-      @apply text-5xl font-serif my-2;
+      @apply text-5xl font-serif my-8;
     }
   
     .about h2 {
-      @apply text-4xl font-serif my-2;
+      @apply text-4xl font-serif my-8;
     }
     .about h3 {
-      @apply text-3xl font-serif my-2; 
+      @apply text-3xl font-serif my-8; 
     }
     .about h4 {
-      @apply text-2xl font-serif my-2;
+      @apply text-2xl font-serif my-8;
     }
     .about h5 {
-      @apply text-xl font-serif my-2;
+      @apply text-xl font-serif my-8;
     }
   
     .about a {
@@ -76,12 +76,7 @@
     .about ol {
       @apply list-decimal ml-8 dark:text-slate-200
     }
-    
-    pre  {
-      text-wrap: wrap;
-      @apply bg-slate-200 border-2 block p-3 rounded-lg dark:bg-slate-700 dark:text-slate-200 text-xs	sm:text-base
-    }
-  
+      
   }
   
   
