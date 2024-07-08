@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="about mx-10 mt-10">
-    <img class="mx-auto h-64 bg-clip-border rounded-3xl" src="/banner.svg" />
+    <img class="mx-auto h-64 bg-clip-border" src="/banner.svg" />
     <h2>What is this?</h2>
     <p>
         Have you ever wanted to share a crossword with someone and solve it together? My friends and I did, and we used to periodically send pictures of a page from a newspaper or book to each other. We'd message each other answers and have to ask them to take another picture of the crossword so we could more easily solve other clues.
@@ -28,7 +28,7 @@
         I created a classical image processing pipeline using OpenCV to process a photograph of a crossword grid into a data structure. This algorithm was prototyped in Python and eventually translated into Kotlin (<a href="https://github.com/jhb123/crosswordScan">original repo</a>) for the Android App. The <a href="#processing-algo">diagram</a> below gives an overview of how this algorithm works.  This part of the process for digitising the crossword works fairly robustly and produces a "hint-less" version of the final puzzle.
     </p>
     <figure class="my-5" id="processing-algo">
-        <img class="mx-auto bg-clip-border rounded-3xl" src="/crossword-pipeline.png" alt="The processing algorithm" />
+        <img class="mx-auto bg-clip-border" src="/crossword-pipeline.png" alt="The processing algorithm" />
         <figcaption class="mx-auto text-center italic">Schematic of the processing pipeline for extracting the grid. First, the grid is found by looking for the largest square in the frame. Next, the cells within the grid are located. Finally, the cells are grouped into clues.</figcaption>
     </figure>
     <p>
@@ -56,7 +56,7 @@
         Each WebSocket connection established three threads. One for receiving messages from the client, one for sending messages to the client from the other clients, and one for sending ping/pong messages. It is implemented with threads and multi-sender-single-consumers rather than using an asynchronous Rust runtime. The client is removed from the puzzle pool if the ping/pong messages are not responded to or if a close message is received.
     </p>
     <figure id="client-server-diagram">
-        <img class="mx-auto bg-clip-border rounded-3xl" src="/crossword_flow.png" />
+        <img class="mx-auto bg-clip-border" src="/crossword_flow.png" />
         <figcaption class="mx-auto text-center italic">A doodle showing how the client and the server work.</figcaption>
     </figure>
     <p>
