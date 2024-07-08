@@ -7,59 +7,35 @@
 <div class="about mx-10 mt-10">
     <img class="mx-auto h-64 bg-clip-border rounded-3xl" src="/banner.svg" />
     <h2>What is this?</h2>
-    <p>Have you ever wanted to share a crossword with someone and solve it together? My friends and I did, and we used
-        to periodically send pictures of a page from a newspaper or book to each other. We'd message each other what we
-        thought the answers could be, and have to ask them to take another picture of the crossword so we could more
-        easily solve other clues.</p>
-    <p>This works, but your friends sometimes take a while to send you the picture. Sometimes, they go can't send you
-        another picture because they're going out, but you want spend a bit more time on the puzzle. Waiting for them to
-        send you another picture many hours later can break your solving-stride.
-    </p>
-    <p>This is where this project comes in. There are two main aspects to flow above. You need to be able to take a
-        picture of a puzzle you have and you need to be able to solve it in real-time with your friends. You can begin
-        solving puzzles from <a href="/">the main page</a>, and you can start digitising your own puzzles with the
-        android client.
+    <p>
+        Have you ever wanted to share a crossword with someone and solve it together? My friends and I did, and we used to periodically send pictures of a page from a newspaper or book to each other. We'd message each other answers and have to ask them to take another picture of the crossword so we could more easily solve other clues.
     </p>
     <p>
-        The main parts of the project are an android client that lets you take a picture of a crossword, digitise, share and solve it and a server made from scratch (mostly) using the Rust.
+        This works, but your friends sometimes take a while to send you the picture. Sometimes, they can't send you another picture because they're too busy, but you want to spend more time on the puzzle. Waiting for them to send you another picture many hours later can break your solving stride.
+    </p>
+    <p>
+        This is where this project comes in. There are two main aspects to flow above. You need to be able to take a picture of a puzzle you have, and you need to be able to solve it in real-time with your friends. You can begin solving puzzles from <a href="/">the main page</a>, and you can start digitising your puzzles with the Android client.
+    </p>
+    <p>
+        The main parts of the project are an Android client that lets you take a picture of a crossword, digitise, share and solve it and a server made from scratch (mostly) using Rust.
     </p>
 
-    <h2>Creating an Android App Which Employs OpenCV and Optical Character Recognition to Digitise Crosswords</h2>
+    <h2>Creating an Android app for digitising crosswords</h2>
     <p>
-        I split the process of digitising the crosswords into determining the structure of the crossword grid and
-        detecting the hints. The structural information and the hint form a "clue". Users first capture the grid with
-        one photograph with the help of a viewfinder which gives them live feedback by way of a contour which highlights
-        where in the image the crossword may be located, and then are given interface for extracting clues where they
-        select a region of interest to scan. While it was conceivable that with one button press, I could digitise a
-        crossword, in reality it was much more reliable to let the user have a chance to redo the optical character
-        recognition part of the algorithm if there were innacurate scans.
+        I split the process of digitising the crosswords into determining the structure of the crossword grid and detecting the hints. The structural information and the hint form a "clue". Users first capture the grid with one photograph with the help of a viewfinder that gives them live feedback by way of a contour which highlights where in the image the crossword may be located, and then are given an interface for extracting clues where they select a region of interest to scan. While it was conceivable that with one button press, I could digitise a crossword, in reality, it was much more reliable to let the user have a chance to redo the optical character recognition part of the algorithm if there were inaccurate scans.
     </p>
     <p>
-        I created a classical image processing pipeline using OpenCV to process a photograph of a crossword grid into a
-        data structure. This algorithm was prototyped in Python, and eventually translated into Kotlin (<a
-            href="https://github.com/jhb123/crosswordScan">original repo</a>) for the Android App. The <a
-            href="#processing-algo">diagram</a> below gives an overview of how this algorithm works. This part of the
-        process for digitising the crossword works fairly robustly, and with it you get a "hint-less" version of the
-        final puzzle.
+        I created a classical image processing pipeline using OpenCV to process a photograph of a crossword grid into a data structure. This algorithm was prototyped in Python and eventually translated into Kotlin (<a href="https://github.com/jhb123/crosswordScan">original repo</a>) for the Android App. The <a href="#processing-algo">diagram</a> below gives an overview of how this algorithm works.  This part of the process for digitising the crossword works fairly robustly and produces a "hint-less" version of the final puzzle.
     </p>
     <figure class="my-5" id="processing-algo">
         <img class="mx-auto bg-clip-border rounded-3xl" src="/crossword-pipeline.png" alt="The processing algorithm" />
-        <figcaption class="mx-auto text-center italic">Schematic of the processing pipeline for extracting the grid.
-            First, the grid is found by looking for the largest square in the frame. Next, the cells within the grid are
-            located. Finally, the cells are grouped into clues.</figcaption>
+        <figcaption class="mx-auto text-center italic">Schematic of the processing pipeline for extracting the grid. First, the grid is found by looking for the largest square in the frame. Next, the cells within the grid are located. Finally, the cells are grouped into clues.</figcaption>
     </figure>
     <p>
-        To digitise the hints for the clues, I used a ready-made implementation of optical character recognition (OCR)
-        developed by Google. This was combined with regexes to determine how to map the text on a page with the clues in
-        the datastruture representing the puzzle. The hints often take a form like <i>10. Argue Score? (8,4)</i> <a
-            href="#footnote-1">[1]</a>. Since OCR sometimes mistakes characters like "5" for "S", the regexes for
-        digitising the hints needed to account for several known-bad characters.
+        To digitise the hints for the clues, I used a ready-made implementation of optical character recognition (OCR) developed by Google. This was combined with regexes to determine how to map the text on a page with the clues in the data structure representing the puzzle. The hints often take a form like <i>10. Argue Score? (8,4)</i> <a href="#footnote-1">[1]</a>. Since OCR sometimes mistakes characters like "5" for "S", the regexes for digitising the hints needed to account for several characters that were found to be problematic.
     </p>
     <p>
-        The android client was made with the Jetpack compose framework and followed an MVVM architecture. The repo is <a
-            href="https://github.com/jhb123/crossword-scan-app">here</a>. The app is made up of screens for scanning the
-        puzzle, an authenitication/sign-up screens, and a screen for solving puzzles. A demo of the app is shown <a
-            href="#app-video">below</a>.
+        The Android client was made with the Jetpack compose framework and followed an MVVM architecture. The repo is <a href="https://github.com/jhb123/crossword-scan-app">here</a>. The app has screens for scanning the puzzle, authentication/sign-up screens, and a screen for solving puzzles. A demo of the app is shown <a href="#app-video">below</a>.
     </p>
     <figure id="app-video">
         <iframe class="mx-auto" width="280" height="600"
@@ -69,30 +45,15 @@
             referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
         <figcaption class="mx-auto text-center italic">Digitising crosswords with the app.</figcaption>
     </figure>
-    <h2>Creating The Server for Solving Crosswords Collaborively in Real-time.</h2>
+    <h2>Creating the server for solving crosswords collaboratively in real-time.</h2>
     <p>
-        There are plenty of frameworks with which you can make a webserver, but I decided to make my own from scratch
-        using Rust. <a href="https://doc.rust-lang.org/stable/book/">The Rust Book</a> gives you a good starting point
-        for making a multithreaded webserver, so I based my project on this. On top of the server described in the
-        Rustbook, I implemented the a signficiant portion of the websocket protocol, a route handler to make it easy for
-        me to add an endpoint with error handling, a response builder to make creating responses easy, a cookie-based authenitication system, and a way to
-        manage multiple users interacting with the same puzzle.
+        There are plenty of frameworks with which you can make a server, but I decided to make my own from scratch using Rust. <a href="https://doc.rust-lang.org/stable/book/">The Rust Book</a> gives you a good starting point for making a multithreaded WebSocket, so I based my project on this. On top of the server described in the Rustbook, I implemented a significant portion of the WebSocket protocol, a route handler to make it easy for me to add an endpoint with error handling, a response builder to make creating responses easy, a cookie-based authentication system, and a way to manage multiple users interacting with the same puzzle.
     </p>
     <p>
-        The source of truth for the puzzle is located on the server. An overview of the the interactions between the
-        client and the server is shown in the <a href="#client-server-diagram">diagram below</a>. If the puzzle is not
-        being solved, it is stored on
-        disk. If someone has established a websocket connection with the server for that puzzle, then that puzzle will
-        be loaded into memory. Whenever the user updates one of the letters in the grid, they are sending a small
-        message to the server over the websocket. The server recieves this data, and it aquires a mutex on the crossword
-        data structure, updates it, and broadcasts the change to all the connected clients. When the server detects that
-        there are no more clients attached to the puzzle, the puzzle is serialised and the on-disk puzzle is updated.
+        The source of truth for the puzzle is located on the server. An overview of the interactions between the client and the server is shown in the <a href="#client-server-diagram">diagram below</a>. If the puzzle is not being solved, it is stored on disk. If someone has established a WebSocket connection with the server for that puzzle, then that puzzle will be loaded into memory. Whenever the user updates one of the letters in the grid, they are sending a small message to the server over the WebSocket. The server receives this data, and it acquires a mutex on the crossword data structure, updates it, and broadcasts the change to all the connected clients. When the server detects that there are no more clients attached to the puzzle, the puzzle is serialised, and the on-disk puzzle is updated.
     </p>
     <p>
-        Each websocket connect established three threads. One to receive messages from the client, one to send messages
-        to the client from the other clients, and one which sends ping/pong messages. Its implemented with threads and
-        multi-sender-single-consumers rather than using an asynchronous Rust runtime. The client is removed from the
-        puzzle pool if the ping/pong messages are not responded too or if a close message is recieved.
+        Each WebSocket connection established three threads. One for receiving messages from the client, one for sending messages to the client from the other clients, and one for sending ping/pong messages. It is implemented with threads and multi-sender-single-consumers rather than using an asynchronous Rust runtime. The client is removed from the puzzle pool if the ping/pong messages are not responded to or if a close message is received.
     </p>
     <figure id="client-server-diagram">
         <img class="mx-auto bg-clip-border rounded-3xl" src="/crossword_flow.png" />
@@ -109,9 +70,7 @@
 </pre>
     </div>
     <p>
-        The <code>HandlerFn</code> takes an enum that is designed to represent the HTTP verbs (but I never implemented
-        them all), a <a href="https://keats.github.io/tera/docs/">Tera</a> struct for rendering HTML and the TCP stream.
-        It returns a result which is used to provide default error handling like 400/500 responses. The route mapping lets you specify a route with a regex. The interaction between an incoming TCP stream and the endpoint is managed by an API struct. A simple route (e.g. this page) can be set up with a relative amount of ease.
+        The <code>HandlerFn</code> takes an enum that is designed to represent the HTTP verbs (but I never implemented them all), a <a href="https://keats.github.io/tera/docs/">Tera</a> struct for rendering HTML and the TCP stream. It returns a result which is used to provide default error handling like 400/500 responses. The route mapping lets you specify a route with a regex. The interaction between an incoming TCP stream and the endpoint is managed by an API struct. A simple route (e.g. this page) can be set up with a relative amount of ease.
     </p>
     <!-- HTML generated using hilite.me --><div style="background: #202020; overflow:auto;width:auto;border:solid gray;border-width:.1em .1em .1em .8em;padding:.2em .6em;"><pre style="margin: 0; line-height: 125%"><span style="color: #6ab825; font-weight: bold">fn</span> <span style="color: #d0d0d0">main()</span> <span style="color: #d0d0d0">{</span>
     <span style="color: #d0d0d0">...</span>
@@ -145,23 +104,21 @@
 <p>That was a very brief overview of how the server works. Check out the <a href="https://github.com/jhb123/cw_live_edit">repo</a> if you're interested in looking at the code in more detail.</p>
 <h2>Closing words</h2>
 <p>
-    This project is probably always going to be 80% done since I can always think of some other nice feature to add, some
-    detail to finesse or a refactor that would improve the quality of the code. A non-exhaustive list in no particular order:
+    This project is probably always going to be 80% done since I can always think of some other nice feature to add, some detail to finesse or a refactor that would improve the quality of the code. A non-exhaustive list in no particular order:
 </p>
-
     <ul>
-        <li>Polish the app. Considering this was the first proper app I made, it's alright. It went through a signficant upgrade/rewrining to switch from an old backend which couldn't do collaborative solving to the one described above. Upgrading the app to the websocket-based server was very much a minimal-viable-product approach and there are features like puzzle icons that didn't get reimplemented. Additionally, I would like to spend time improving the composable functions since they seem to suffer from "prop drilling".</li>
         <li>
-            I could add something to stop mallicious
-            people who want to attack this server or write profanities into the publically viewable site which I mentioned
-            on my CV.
+            Polish the app. Considering this was the first proper app I made, it's alright. It went through a significant upgrade/rewiring to switch from an old backend which couldn't do collaborative solving to the one described above. Upgrading the app to the WebSocket-based server was very much a minimal-viable-product approach, and there are features like puzzle icons that didn't get reimplemented. Additionally, I would like to spend time improving the composable functions since they seem to suffer from "prop drilling".
+        </li>
+        <li>
+            I could add something to stop malicious people who want to attack this server or write profanities into the publically viewable site that I mentioned on my CV.
         </li>
         <li>
             The database could be made more sophisticated. I could set up the database to associate the puzzles with users by way of a junction table. I could add different types of users with permitted actions.
         </li>
     </ul>
     <p>
-        However, this project already has enough of the features I want and I've got other projects I want to work on, so this project will be put into the feature-freeze mode for the time being.
+        However, this project already has enough of the features I want, and I've got other projects I want to work on, so this project will be put into the feature-freeze mode for the time being.
     </p>
     <p id="footnote-1">[1] The answer is <i>question mark</i>.</p>
 </div>

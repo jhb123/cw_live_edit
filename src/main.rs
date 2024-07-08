@@ -61,6 +61,7 @@ fn main() {
     routes.insert(r"^/crossword-pipeline.png$", crossword_algorithm_image);
     routes.insert(r"^/banner.svg$", banner_image);
     routes.insert(r"^/crossword_flow.png$", crossword_flow_handler);
+    routes.insert(r"^/logo.png$", logo_handler);
 
 
     routes.insert(r"^/puzzle/\d+$", puzzle_handler);
@@ -377,6 +378,10 @@ fn banner_image(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<
 
 fn crossword_flow_handler(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
     image_file_handler(stream,"static/connection_flow.png","image/png")
+}
+
+fn logo_handler(_req: &HttpRequest, _: Arc<Tera>, stream: TcpStream)  -> Result<(), HandlerError> {
+    image_file_handler(stream,"static/logo.png","image/png")
 }
 
 fn image_file_handler(mut stream: TcpStream, path: &str, content_type: &str) -> Result<(), HandlerError> {
